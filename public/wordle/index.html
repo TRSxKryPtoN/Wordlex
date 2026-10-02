@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1115" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Wordlex — Word Puzzle</title>
+    <meta
+      name="description"
+      content="Wordlex: a five-letter word puzzle. Play the daily word or unlimited random puzzles offline, or race friends in online team matches."
+    />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Wordlex" />
+    <meta name="format-detection" content="telephone=no" />
+    <script>
+      // If the game fails to start, say why on screen instead of showing a blank page.
+      window.addEventListener(
+        "error",
+        function (e) {
+          if (window.__wordlexBooted) return;
+          var box = document.getElementById("bootError") || document.createElement("pre");
+          box.id = "bootError";
+          box.style.cssText =
+            "position:fixed;left:0;right:0;top:0;z-index:99999;margin:0;padding:14px;background:#7a1f14;color:#fff;font:13px/1.4 monospace;white-space:pre-wrap";
+          var src = e.filename || (e.target && (e.target.src || e.target.href)) || "";
+          box.textContent =
+            (box.textContent
+              ? box.textContent + "\n"
+              : "Wordlex could not start. Try a hard refresh (Ctrl+Shift+R).\n") +
+            (e.message || "Failed to load") +
+            (src ? "  [" + src + (e.lineno ? ":" + e.lineno : "") + "]" : "");
+          (document.body || document.documentElement).appendChild(box);
+        },
+        true,
+      );
+    </script>
+    <link rel="stylesheet" href="./css/styles.css?v=2.8.0" />
+  </head>
+  <body data-theme="dark" data-view="home">
+    <div id="app">
+      <!-- ============== TOP BAR ============== -->
+      <header class="topbar">
+        <div class="topbar-side">
+          <button class="icon-btn" id="btnHome" type="button" aria-label="Home">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 11.5 12 4l9 7.5" />
+              <path d="M5.5 10v9.5h13V10" />
+            </svg>
+          </button>
+          <button class="icon-btn" id="btnHelp" type="button" aria-label="How to play">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M9.5 9.3a2.6 2.6 0 0 1 5 .8c0 1.8-2.5 2.2-2.5 4" />
+              <path d="M12 17.2v.1" />
+            </svg>
+          </button>
+        </div>
+        <h1 class="brand" aria-label="Wordlex">
+          <span class="brand-tiles" aria-hidden="true"
+            ><span class="bt c">W</span><span class="bt p">O</span><span class="bt a">R</span
+            ><span class="bt c">D</span><span class="bt p">L</span><span class="bt a">E</span
+            ><span class="bt c">X</span></span
+          >
+        </h1>
+        <div class="topbar-side end">
+          <button class="icon-btn" id="btnStats" type="button" aria-label="Statistics">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V4M19 20v-6" /></svg>
+          </button>
+          <button class="icon-btn" id="btnSettings" type="button" aria-label="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+              <circle cx="15" cy="7" r="2" />
+              <circle cx="9" cy="17" r="2" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="game">
+        <!-- Solo: Daily / Random -->
+        <div class="solo-bar" id="soloBar">
+          <div class="segmented" role="tablist" aria-label="Solo mode">
+            <button class="seg" type="button" role="tab" data-solo="daily">Daily</button>
+            <button class="seg" type="button" role="tab" data-solo="random">Random</button>
+          </div>
+          <button class="btn-mini" id="btnNewPuzzle" type="button">New puzzle</button>
+        </div>
+
+        <!-- Match: round, timer, team scores -->
+        <div class="match-hud" id="matchHud">
+          <div class="hud-row">
+            <span class="hud-round">Round <b id="hudRound">1</b>/<b id="hudTotal">3</b></span>
+            <span class="hud-timer hidden" id="hudTimer" aria-label="Time left">0:00</span>
+            <button class="btn-mini" id="btnScores" type="button">Scores</button>
+          </div>
+          <div class="timer-bar hidden" id="timerBar"><span></span></div>
+          <div class="team-chips" id="teamChips" aria-label="Team scores"></div>
+        </div>
+
+        <p class="status-line" id="statusLine" aria-live="polite"></p>
+
+        <div class="board-wrap">
+          <div id="board" class="board" role="grid" aria-label="Guesses"></div>
+        </div>
+
+        <div id="keyboard" class="keyboard" role="group" aria-label="Keyboard"></div>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <!-- ============== HOME ============== -->
+    <div
+      class="modal screen hidden"
+      id="homeModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="homeTitle"
+      data-required="true"
+    >
+      <div class="modal-card home-card">
+        <div class="home-logo" aria-hidden="true">
+          <span class="tile correct">W</span><span class="tile present">O</span
+          ><span class="tile absent">R</span><span class="tile correct">D</span>
+        </div>
+        <h2 id="homeTitle">Wordlex</h2>
+        <p class="sub">Guess the five-letter word in six tries.</p>
+        <div class="choice-grid">
+          <button class="choice" id="choiceSolo" type="button">
+            <span class="choice-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="8.5" />
+                <circle cx="12" cy="12" r="4.5" />
+                <circle cx="12" cy="12" r="1" />
+              </svg>
+            </span>
+            <span class="choice-text"
+              ><strong>Play solo</strong
+              ><span>Daily word and unlimited puzzles. Works offline.</span></span
+            >
+          </button>
+          <button class="choice" id="choiceMulti" type="button">
+            <span class="choice-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="8.5" cy="9" r="3" />
+                <circle cx="16.5" cy="10" r="2.5" />
+                <path d="M3 19c.6-3 2.8-4.5 5.5-4.5S13.400 16 14 19" />
+                <path d="M15 15c2.600-.3 4.900 1 5.600 4" />
+              </svg>
+            </span>
+            <span class="choice-text"
+              ><strong>Play with friends</strong><span>Team matches in a private room.</span></span
+            >
+          </button>
+        </div>
+        <button class="link-btn" id="homeHelp" type="button">How to play</button>
+      </div>
+    </div>
+
+    <!-- ============== HOW TO PLAY ============== -->
+    <div
+      class="modal hidden"
+      id="helpModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="helpTitle"
+    >
+      <div class="modal-card">
+        <button class="modal-close" data-close type="button" aria-label="Close">×</button>
+        <h2 id="helpTitle">How to play</h2>
+        <p class="sub">Guess the word in six tries. Each guess must be a real five-letter word.</p>
+        <ul class="rules">
+          <li>
+            <span class="tile mini correct">A</span
+            ><span>Green: the letter is in the right spot.</span>
+          </li>
+          <li>
+            <span class="tile mini present">B</span
+            ><span>Yellow: the letter is in the word, wrong spot.</span>
+          </li>
+          <li>
+            <span class="tile mini absent">C</span><span>Grey: the letter is not in the word.</span>
+          </li>
+        </ul>
+        <h3>Solo</h3>
+        <p class="body">
+          <b>Daily</b> gives everyone the same word each day. <b>Random</b> is unlimited. Your game
+          is saved if you close the app.
+        </p>
+        <h3>With friends</h3>
+        <p class="body">
+          One player hosts a room and shares the Room ID and password. Everyone gets the same word
+          each round. Fewer guesses score more points, and with a timer on, fast solves earn a
+          bonus. A team's score is the average of its players.
+        </p>
+      </div>
+    </div>
+
+    <!-- ============== RESULT ============== -->
+    <div
+      class="modal hidden"
+      id="resultModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="resultTitle"
+    >
+      <div class="modal-card">
+        <button class="modal-close" data-close type="button" aria-label="Close">×</button>
+        <h2 id="resultTitle">Result</h2>
+        <div id="resultWord" class="result-word"></div>
+        <div class="stats-grid" id="resultStats"></div>
+        <div class="modal-actions">
+          <button class="btn primary" id="btnPlayAgain" type="button">Play again</button>
+          <button class="btn ghost" id="btnBackLobby" type="button">Back to lobby</button>
+          <button class="btn ghost" id="btnShare" type="button">Share</button>
+          <button
+            class="icon-btn chat-btn boxed"
+            id="btnResultChat"
+            type="button"
+            aria-label="Chat"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 5h16v11H9l-5 4z" />
+            </svg>
+            <span class="chat-badge hidden" data-chat-badge></span>
+          </button>
+        </div>
+        <p id="resultHint" class="hint"></p>
+      </div>
+    </div>
+
+    <!-- ============== ROUND RESULTS (match) ============== -->
+    <div
+      class="modal hidden"
+      id="roundModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="roundTitle"
+      data-required="true"
+    >
+      <div class="modal-card">
+        <h2 id="roundTitle">Round results</h2>
+        <div id="roundWord" class="result-word"></div>
+        <div id="roundLeaderboard" class="leaderboard"></div>
+        <p id="roundNextHint" class="hint"></p>
+      </div>
+    </div>
+
+    <!-- ============== SCORES (match) ============== -->
+    <div
+      class="modal sheet hidden"
+      id="scoresModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="scoresTitle"
+    >
+      <div class="modal-card">
+        <button class="modal-close" data-close type="button" aria-label="Close">×</button>
+        <h2 id="scoresTitle">Scores</h2>
+        <div id="leaderboard" class="leaderboard"></div>
+        <div class="modal-actions stack">
+          <button class="btn ghost" id="btnEndRound" type="button">End round now</button>
+          <button class="btn ghost" id="btnRestartMatch" type="button">Restart match</button>
+          <button class="btn ghost danger-text" id="btnLeaveMatch" type="button">
+            Leave match
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============== STATS ============== -->
+    <div
+      class="modal hidden"
+      id="statsModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="statsTitle"
+    >
+      <div class="modal-card">
+        <button class="modal-close" data-close type="button" aria-label="Close">×</button>
+        <h2 id="statsTitle">Statistics</h2>
+        <p class="sub">Solo games</p>
+        <div class="stats-grid" id="statsGrid"></div>
+        <h3>Guess distribution</h3>
+        <div class="distribution" id="distribution"></div>
+        <div class="modal-actions">
+          <button class="btn ghost" id="btnResetStats" type="button">Reset stats</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============== SETTINGS ============== -->
+    <div
+      class="modal hidden"
+      id="settingsModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settingsTitle"
+    >
+      <div class="modal-card">
+        <button class="modal-close" data-close type="button" aria-label="Close">×</button>
+        <h2 id="settingsTitle">Settings</h2>
+        <div class="setting-row">
+          <div><strong>Theme</strong></div>
+          <div class="segmented small" id="themeSeg" role="group" aria-label="Theme">
+            <button class="seg" type="button" data-theme-opt="system">Auto</button>
+            <button class="seg" type="button" data-theme-opt="light">Light</button>
+            <button class="seg" type="button" data-theme-opt="dark">Dark</button>
+          </div>
+        </div>
+        <label class="setting-row" for="toggleContrast">
+          <div>
+            <strong>High contrast</strong>
+            <p class="muted">Blue and orange tiles, easier for colour-blind players.</p>
+          </div>
+          <span class="switch"
+            ><input type="checkbox" id="toggleContrast" /><span class="slider"></span
+          ></span>
+        </label>
+        <label class="setting-row" for="toggleHaptics">
+          <div>
+            <strong>Vibration</strong>
+            <p class="muted">Light tap feedback on supported phones.</p>
+          </div>
+          <span class="switch"
+            ><input type="checkbox" id="toggleHaptics" /><span class="slider"></span
+          ></span>
+        </label>
+        <p class="version">Wordlex v2.8</p>
+      </div>
+    </div>
+
+    <!-- ============== MULTIPLAYER: host or join ============== -->
+    <div
+      class="modal hidden"
+      id="mpStartModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="mpTitle"
+    >
+      <div class="modal-card">
+        <button class="modal-close" data-close type="button" aria-label="Close">×</button>
+        <h2 id="mpTitle">Play with friends</h2>
+        <p class="sub">
+          One player hosts a room. Everyone else joins with the Room ID and password.
+        </p>
+        <div class="segmented net-mode hidden" id="netModeSeg" role="group" aria-label="Connection">
+          <button class="seg" type="button" data-net="local">Same Wi-Fi (offline)</button>
+          <button class="seg" type="button" data-net="online">Online</button>
+        </div>
+        <div class="choice-grid">
+          <button class="choice" id="btnHost" type="button">
+            <span class="choice-text"
+              ><strong>Host a room</strong><span>Set up teams and start the match.</span></span
+            >
+          </button>
+          <button class="choice" id="btnJoin" type="button">
+            <span class="choice-text"
+              ><strong>Join a room</strong><span>Enter the details your host shared.</span></span
+            >
+          </button>
+        </div>
+        <p class="hint" id="mpHint"></p>
+      </div>
+    </div>
+
+    <!-- Host: create room -->
+    <div
+      class="modal hidden"
+      id="hostModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="hostTitle"
+    >
+      <form class="modal-card" id="hostForm" autocomplete="off">
+        <button class="modal-close" data-close type="button" aria-label="Close">×</button>
+        <h2 id="hostTitle">Host a room</h2>
+        <div class="field">
+          <label for="hostName">Your name</label>
+          <input id="hostName" type="text" maxlength="16" placeholder="Host" enterkeyhint="next" />
+        </div>
+        <div class="field">
+          <label for="roomIdField">Room ID</label>
+          <div class="code-actions">
+            <input
+              id="roomIdField"
+              type="text"
+              maxlength="12"
+              class="code-input"
+              autocapitalize="characters"
+              autocorrect="off"
+              spellcheck="false"
+              placeholder="e.g. MYROOM"
+            />
+            <button
+              class="btn ghost"
+              id="btnRegenRoom"
+              type="button"
+              aria-label="Generate a new Room ID and password"
+            >
+              New
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="roomPassField">Password</label>
+          <div class="code-actions">
+            <input
+              id="roomPassField"
+              type="text"
+              maxlength="12"
+              class="code-input"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              placeholder="Set a password"
+            />
+          </div>
+        </div>
+        <p class="hint" id="hostHint"></p>
+        <div class="modal-actions">
+          <button class="btn primary wide" id="btnCreateRoom" type="submit">Create room</button>
+        </div>
+        <p class="hint error" id="hostStatus" aria-live="polite"></p>
+      </form>
+    </div>
+
+    <!-- Guest: join room -->
+    <div
+      class="modal hidden"
+      id="joinModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="joinTitle"
+    >
+      <form class="modal-card" id="joinForm" autocomplete="off">
+        <button class="modal-close" data-close type="button" aria-label="Close">×</button>
+        <h2 id="joinTitle">Join a room</h2>
+        <div id="nearby" class="nearby hidden">
+          <div class="lobby-section-head">
+            <h3>Rooms nearby</h3>
+            <button class="btn-mini" id="btnRescan" type="button">Refresh</button>
+          </div>
+          <div id="nearbyList" class="nearby-list" aria-live="polite"></div>
+        </div>
+        <div class="field">
+          <label for="guestName">Your name</label>
+          <input
+            id="guestName"
+            type="text"
+            maxlength="16"
+            placeholder="Player"
+            enterkeyhint="next"
+          />
+        </div>
+        <div class="field">
+          <label for="joinRoomId">Room ID</label>
+          <input
+            id="joinRoomId"
+            type="text"
+            maxlength="16"
+            class="code-input"
+            autocapitalize="characters"
+            autocorrect="off"
+            spellcheck="false"
+            placeholder="ABC123"
+          />
+        </div>
+        <div class="field">
+          <label for="joinRoomPass">Password</label>
+          <input
+            id="joinRoomPass"
+            type="text"
+            maxlength="12"
+            class="code-input"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            placeholder="••••"
+          />
+        </div>
+        <div class="modal-actions">
+          <button class="btn primary wide" id="btnGuestJoin" type="submit">Join room</button>
+        </div>
+        <p class="hint error" id="joinStatus" aria-live="polite"></p>
+      </form>
+    </div>
+
+    <!-- ============== LOBBY (full screen, game blurred behind) ============== -->
+    <div
+      class="modal screen hidden"
+      id="lobbyModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="lobbyTitle"
+      data-required="true"
+    >
+      <div class="modal-card lobby-card">
+        <div class="lobby-head">
+          <h2 id="lobbyTitle">Lobby</h2>
+          <div class="lobby-head-actions">
+            <button class="icon-btn chat-btn" id="btnLobbyChat" type="button" aria-label="Chat">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 5h16v11H9l-5 4z" />
+              </svg>
+              <span class="chat-badge hidden" data-chat-badge></span>
+            </button>
+            <button class="btn-mini danger" id="btnLobbyLeave" type="button">Leave</button>
+          </div>
+        </div>
+
+        <div class="room-card" id="lobbyRoom">
+          <div class="room-codes">
+            <div>
+              <span class="room-label">Room ID</span><b class="room-code" id="lobbyRoomId">—</b>
+            </div>
+            <div>
+              <span class="room-label">Password</span><b class="room-code" id="lobbyRoomPass">—</b>
+            </div>
+          </div>
+          <button class="btn ghost" id="btnShareInvite" type="button">Invite</button>
+        </div>
+
+        <div class="lobby-section-head">
+          <h3>Teams</h3>
+          <span class="muted" id="lobbyCount"></span>
+        </div>
+        <div id="lobbyTeams" class="team-grid"></div>
+
+        <div class="field">
+          <label for="lobbyMyName">Your name</label>
+          <input
+            id="lobbyMyName"
+            type="text"
+            maxlength="16"
+            placeholder="Your name"
+            enterkeyhint="done"
+          />
+        </div>
+
+        <div class="lobby-section-head"><h3>Match settings</h3></div>
+        <div class="field-row" id="lobbyCfgEdit">
+          <div class="field">
+            <label for="cfgRounds">Rounds</label>
+            <select id="cfgRounds"></select>
+          </div>
+          <div class="field">
+            <label for="cfgTimer">Time per round</label>
+            <select id="cfgTimer"></select>
+          </div>
+        </div>
+        <p class="cfg-summary" id="lobbyCfgView"></p>
+
+        <div class="lobby-foot">
+          <button class="btn primary wide" id="btnLobbyStart" type="button">Start match</button>
+          <p class="hint" id="lobbyHint" aria-live="polite"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============== RECONNECT ============== -->
+    <div
+      class="modal hidden"
+      id="reconnectModal"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="reconnectTitle"
+      data-required="true"
+    >
+      <div class="modal-card">
+        <h2 id="reconnectTitle">Connection lost</h2>
+        <p class="sub" id="reconnectText" aria-live="polite">Trying to reconnect…</p>
+        <div class="modal-actions">
+          <button class="btn primary" id="btnReconnect" type="button">Try again</button>
+          <button class="btn ghost" id="btnReconnectHome" type="button">Leave</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============== CHAT (pop-up; closed while a round is being played) ============== -->
+    <div
+      class="modal chat-modal hidden"
+      id="chatModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="chatTitle"
+    >
+      <div class="modal-card">
+        <button class="modal-close" data-close type="button" aria-label="Close">×</button>
+        <h2 id="chatTitle">Chat</h2>
+        <section class="chat" id="chatPanel" aria-label="Room chat">
+          <div class="chat-log" id="chatLog" role="log" aria-live="polite"></div>
+          <form class="chat-form" id="chatForm" autocomplete="off">
+            <input
+              id="chatInput"
+              type="text"
+              maxlength="200"
+              placeholder="Message everyone"
+              aria-label="Chat message"
+              enterkeyhint="send"
+              autocomplete="off"
+            />
+            <button class="btn primary" type="submit">Send</button>
+          </form>
+        </section>
+      </div>
+    </div>
+
+    <!-- ============== CONFIRM ============== -->
+    <div
+      class="modal hidden"
+      id="confirmModal"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="confirmTitle"
+      aria-describedby="confirmText"
+    >
+      <div class="modal-card small">
+        <h2 id="confirmTitle">Are you sure?</h2>
+        <p class="sub" id="confirmText"></p>
+        <div class="modal-actions">
+          <button class="btn ghost" id="confirmCancel" type="button">Cancel</button>
+          <button class="btn primary" id="confirmOk" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Word lists first, then the game. PeerJS loads only when multiplayer is used. -->
+    <script src="./data/words.js?v=2.8.0"></script>
+    <script src="./js/rules.js?v=2.8.0"></script>
+    <script src="./js/store.js?v=2.8.0"></script>
+    <script src="./js/stats.js?v=2.8.0"></script>
+    <script src="./js/ui.js?v=2.8.0"></script>
+    <script src="./js/keyboard.js?v=2.8.0"></script>
+    <script src="./js/game.js?v=2.8.0"></script>
+    <script src="./js/localnet.js?v=2.8.0"></script>
+    <script src="./js/lan.js?v=2.8.0"></script>
+    <script src="./js/fx.js?v=2.8.0"></script>
+    <script src="./js/lanui.js?v=2.8.0"></script>
+    <script src="./js/main.js?v=2.8.0"></script>
+  </body>
+</html>

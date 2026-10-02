@@ -1,0 +1,9 @@
+{
+  "appId": "com.wordlex.app",
+  "appName": "Wordlex",
+  "webDir": "public/wordle",
+  "backgroundColor": "#0f1115",
+  "server": { "androidScheme": "http", "cleartext": true },
+  "android": { "backgroundColor": "#0f1115", "allowMixedContent": true },
+  "ios": { "backgroundColor": "#0f1115", "contentInset": "never" }
+}
