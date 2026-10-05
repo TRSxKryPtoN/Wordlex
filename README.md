@@ -1,5 +1,5 @@
-<img width="2267" height="980" alt="banner" src="https://github.com/user-attachments/assets/fa6e3157-1927-454e-9a4a-ba2ae5ff1e97" />
-<img width="2267" height="980" alt="banner-2" src="https://github.com/user-attachments/assets/be1475f3-c85f-4ccf-a917-d54d5e910a57" />
+<img width="2267" height="980" alt="banner (1)" src="https://github.com/user-attachments/assets/71a6114f-b87d-4d8e-ae97-3afa47c9a8ac" />
+<img width="2267" height="980" alt="banner-2 (1)" src="https://github.com/user-attachments/assets/d3128b5f-c9bc-49fd-977b-93e9a8e8a4ce" />
 
 # Wordlex
 
