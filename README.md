@@ -1,3 +1,6 @@
+<img width="2267" height="980" alt="banner" src="https://github.com/user-attachments/assets/fa6e3157-1927-454e-9a4a-ba2ae5ff1e97" />
+<img width="2267" height="980" alt="banner-2" src="https://github.com/user-attachments/assets/be1475f3-c85f-4ccf-a917-d54d5e910a57" />
+
 # Wordlex
 
 A five-letter word puzzle. Guess the word in six tries: green means the letter
