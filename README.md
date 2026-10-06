@@ -1,3 +1,7 @@
+## Screenshots
+<img width="2267" height="980" alt="Wordlex-banner-1" src="https://github.com/user-attachments/assets/6cc27d69-49ac-441d-a5f2-804c45769af0" />
+<img width="2267" height="980" alt="Wordlex-banner-2" src="https://github.com/user-attachments/assets/f2ed318a-1361-4c81-a050-e588aa92dc7d" />
+
 # Wordlex
 
 A five-letter word puzzle. Guess the word in six tries: green means the letter
@@ -21,21 +25,6 @@ The same game runs as a website on a PC and as an Android app.
 
 ---
 
-## Screenshots
-
-![Wordlex multiplayer: host a room, rooms nearby, chat, scores and round results](docs/screenshots/banner-2.png)
-
-| Solo puzzle | Result | Statistics | Light theme |
-|---|---|---|---|
-| ![Solo puzzle](docs/screenshots/02-solo.png) | ![Result](docs/screenshots/03-result.png) | ![Statistics](docs/screenshots/04-stats.png) | ![Light theme](docs/screenshots/05-light-theme.png) |
-
-| Lobby | Chat | Match | Scores |
-|---|---|---|---|
-| ![Lobby](docs/screenshots/07-lobby.png) | ![Chat](docs/screenshots/08-chat.png) | ![Match](docs/screenshots/09-match.png) | ![Scores](docs/screenshots/10-scores.png) |
-
-| Round results | Final results | Offline mode (app) | Rooms nearby (app) |
-|---|---|---|---|
-| ![Round results](docs/screenshots/11-round-results.png) | ![Final results](docs/screenshots/12-final-results.png) | ![Offline mode](docs/screenshots/13-offline-mode.png) | ![Rooms nearby](docs/screenshots/14-rooms-nearby.png) |
 
 ---
 
