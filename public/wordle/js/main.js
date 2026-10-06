@@ -299,7 +299,7 @@
   // Paste the download link (MediaFire, Google Drive, ...) between the quotes below.
   // Left empty, the button shows only if the APK is on the site itself
   // (public/downloads/Wordlex.apk).
-  const APK_URL = "https://www.mediafire.com/file/l76cm7hhhdcveh8/Wordlex.apk/file";
+  const APK_URL = "https://www.mediafire.com/file/28rs2cy8ywxsgxv/Wordlex.apk/file";
 
   // Website only: visitor counts with Vercel Web Analytics. It works once "Analytics" is
   // enabled for the project in the Vercel dashboard; anywhere else the script is simply absent.

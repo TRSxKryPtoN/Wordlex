@@ -1,9 +1,5 @@
 # Wordlex
 
-## Screenshots
-<img width="2267" height="980" alt="banner (1)" src="https://github.com/user-attachments/assets/71a6114f-b87d-4d8e-ae97-3afa47c9a8ac" />
-<img width="2267" height="980" alt="banner-2 (1)" src="https://github.com/user-attachments/assets/d3128b5f-c9bc-49fd-977b-93e9a8e8a4ce" />
-
 A five-letter word puzzle. Guess the word in six tries: green means the letter
 is in the right spot, yellow means it is in the word but in the wrong spot, grey
 means it is not in the word.
@@ -11,6 +7,9 @@ means it is not in the word.
 - **Solo:** a Daily word (the same for everyone each day) and unlimited Random puzzles.
 - **Play with friends:** team matches in a private room, with chat, team MVPs and
   a best-player award.
+
+
+![Wordlex screens: home, solo puzzle, lobby, match and final results](docs/screenshots/banner.png)
 
 The same game runs as a website on a PC and as an Android app.
 
@@ -22,6 +21,21 @@ The same game runs as a website on a PC and as an Android app.
 
 ---
 
+## Screenshots
+
+![Wordlex multiplayer: host a room, rooms nearby, chat, scores and round results](docs/screenshots/banner-2.png)
+
+| Solo puzzle | Result | Statistics | Light theme |
+|---|---|---|---|
+| ![Solo puzzle](docs/screenshots/02-solo.png) | ![Result](docs/screenshots/03-result.png) | ![Statistics](docs/screenshots/04-stats.png) | ![Light theme](docs/screenshots/05-light-theme.png) |
+
+| Lobby | Chat | Match | Scores |
+|---|---|---|---|
+| ![Lobby](docs/screenshots/07-lobby.png) | ![Chat](docs/screenshots/08-chat.png) | ![Match](docs/screenshots/09-match.png) | ![Scores](docs/screenshots/10-scores.png) |
+
+| Round results | Final results | Offline mode (app) | Rooms nearby (app) |
+|---|---|---|---|
+| ![Round results](docs/screenshots/11-round-results.png) | ![Final results](docs/screenshots/12-final-results.png) | ![Offline mode](docs/screenshots/13-offline-mode.png) | ![Rooms nearby](docs/screenshots/14-rooms-nearby.png) |
 
 ---
 

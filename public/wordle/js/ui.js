@@ -211,15 +211,8 @@ window.UI = (function () {
   }
 
   /** Native share sheet when available, otherwise copy to the clipboard. */
+  /** Copies the text and says so. (No share sheet: on a PC that opened the Mail app.) */
   async function shareText(text, copiedMsg) {
-    if (navigator.share) {
-      try {
-        await navigator.share({ text });
-        return;
-      } catch (e) {
-        if (e && e.name === "AbortError") return; // user closed the sheet
-      }
-    }
     toast((await copy(text)) ? copiedMsg || "Copied to clipboard" : "Could not copy");
   }
 
