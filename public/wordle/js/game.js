@@ -105,7 +105,9 @@ window.Game = (function () {
     persist();
     render();
 
-    if (mode === "lan" && opts.timer > 0 && !s.finished) {
+    // In a match the clock keeps running for players who have finished (or are watching),
+    // so they can see how long the round still has to go.
+    if (mode === "lan" && opts.timer > 0 && (!s.finished || opts.remainingMs > 0)) {
       startTimer(opts.timer * 1000, opts.remainingMs > 0 ? opts.remainingMs : opts.timer * 1000);
     }
     return { resumed: s.guesses.length > 0, finished: s.finished, won: s.won };
@@ -334,7 +336,7 @@ window.Game = (function () {
     if (s.finished) return;
     s.finished = true;
     s.won = won;
-    stopTimer();
+    if (s.mode !== "lan") stopTimer(); // in a match the round clock runs on until the round ends
     persist();
 
     if (won) {

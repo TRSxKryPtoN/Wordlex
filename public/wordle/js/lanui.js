@@ -683,6 +683,7 @@ window.LanUI = (function () {
     }
     renderHud();
     showTeammateSolves();
+    setDoneStatus();
     if (UI.isOpen(el.scoresModal)) renderScores();
   }
 
@@ -714,8 +715,9 @@ window.LanUI = (function () {
     // Chat opens for a player once their own round is over (or they are only watching).
     setMatchChat(!!(msg.done || msg.spectating));
     if (msg.spectating) setStatus("Match in progress — you'll play from the next round.");
-    else if (msg.done) setStatus("Waiting for the other players…");
+    else if (msg.done) setDoneStatus("You have finished this round.");
     else setStatus("");
+    if (!msg.done) doneBase = "";
     renderHud();
   }
 
@@ -737,10 +739,24 @@ window.LanUI = (function () {
     UI.close(el.hintModal);
     setMatchChat(true);
     if (p.won) {
-      setStatus("Solved! You can chat while the others finish.");
+      setDoneStatus("Solved!");
       FX.confetti(40);
     } else if (p.reason === "time") setStatus("Time's up!");
-    else setStatus("Out of guesses. You can chat while the others finish.");
+    else setDoneStatus("Out of guesses.");
+  }
+
+  let doneBase = ""; // set once my own round is over
+
+  /** After I finish: say how many players the round is still waiting for. */
+  function setDoneStatus(base) {
+    if (base != null) doneBase = base;
+    if (!doneBase || phase !== "match" || !state) return;
+    const n = state.players.filter((p) => p.connected && p.status === "playing").length;
+    setStatus(
+      n > 0
+        ? `${doneBase} Waiting for ${n} player${n === 1 ? "" : "s"}. You can chat meanwhile.`
+        : `${doneBase} Round is ending…`,
+    );
   }
 
   function setStatus(text) {
@@ -815,7 +831,9 @@ window.LanUI = (function () {
   }
 
   function onRoundEnd(p) {
+    doneBase = "";
     Game.forceEnd();
+    Game.stopTimer(); // also for players who had already finished
     UI.close(el.chatModal);
     setHints(null);
     UI.close(el.hintModal);
