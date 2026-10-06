@@ -4,7 +4,7 @@
 
 # Wordlex
 
-WORKING LINK : https://wordlex-public.vercel.app/wordle/
+#Click to play : https://wordlex-public.vercel.app/wordle/
 
 A five-letter word puzzle. Guess the word in six tries: green means the letter
 is in the right spot, yellow means it is in the word but in the wrong spot, grey
