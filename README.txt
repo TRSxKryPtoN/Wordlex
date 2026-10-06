@@ -80,8 +80,12 @@ PLAY WITH FRIENDS WITH NO INTERNET
      The host taps Start match.
 
   Tips:
-  - The host should keep the app open. If the host's phone is
-    locked or the app is closed, the match pauses for everyone.
+  - The room keeps running if the host switches to another app
+    (a small notification shows while it is open). If the host
+    leaves, the player who joined first becomes the new host and
+    the room stays open. If the original host comes back under
+    the same name, they get the host controls again. A round in progress restarts with a new
+    word; points from finished rounds are kept.
   - A player who leaves by mistake can join again with the SAME
     NAME and keeps their points.
   - Some office or hotel Wi-Fi blocks phones from talking to
@@ -110,10 +114,14 @@ IPHONE
   +1 if solved in the first three quarters.
 - A team's score is the AVERAGE of its players, so a bigger
   team has no advantage.
+- A Hint costs 1 point: remove three letters that are not in the word, or reveal
+  one letter that is. Up to three hints a round.
 - When a teammate solves the word, the rest of the team is told
   who solved it, but not the word.
-- Chat is open in the lobby and on the final results. It is
-  closed while a round is being played.
+- Chat is open in the lobby and on the final results. During a
+  round it opens for a player once they have solved the word or
+  used all six guesses; players still guessing cannot see those
+  messages until the round ends.
 - The final screen shows the winning team, an MVP for each team,
   and the best player overall.
 

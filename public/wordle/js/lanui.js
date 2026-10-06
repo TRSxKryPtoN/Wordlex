@@ -13,12 +13,15 @@ window.LanUI = (function () {
     [0, "No timer"],
     [30, "30 seconds"],
     [60, "1 minute"],
-    [90, "90 seconds"],
+    [90, "1 min 30 seconds"],
     [120, "2 minutes"],
     [180, "3 minutes"],
     [300, "5 minutes"],
   ];
-  const RETRY_DELAYS = [800, 2500, 5000];
+  // Keep trying for about two minutes: a host whose app is in the background often returns.
+  const RETRY_DELAYS = [
+    300, 1200, 2500, 4000, 5000, 6000, 8000, 8000, 10000, 10000, 15000, 15000, 15000, 15000,
+  ];
 
   let hooks = {};
   let active = false; // currently in a room
@@ -44,6 +47,7 @@ window.LanUI = (function () {
       "resultModal",
       "reconnectModal",
       "chatModal",
+      "hintModal",
     ].forEach((id) => (el[id] = $("#" + id)));
 
     // Settings dropdowns
@@ -80,10 +84,10 @@ window.LanUI = (function () {
 
     // Lobby
     $("#btnLobbyLeave").onclick = confirmLeave;
-    el.lobbyModal.addEventListener("modal:back", confirmLeave);
     $("#btnShareInvite").onclick = shareInvite;
+    el.lobbyModal.addEventListener("modal:back", confirmLeave);
     $("#btnLobbyStart").onclick = () => {
-      if (LAN.getRole() === "host") LAN.startMatch();
+      LAN.startMatch();
     };
     $("#lobbyMyName").addEventListener("input", (e) => {
       const name = e.target.value.slice(0, 16);
@@ -100,6 +104,12 @@ window.LanUI = (function () {
     $("#lobbyTeams").addEventListener("focusout", onTeamsBlur);
 
     // In-match
+    $("#btnHint").onclick = openHint;
+    $("#btnMatchChat").onclick = openChat;
+    el.hintModal.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-hint]");
+      if (b) takeHint(b.dataset.hint);
+    });
     $("#btnScores").onclick = () => {
       renderScores();
       UI.open(el.scoresModal);
@@ -355,6 +365,7 @@ window.LanUI = (function () {
     active = true;
     state = LAN.getView() || state;
     document.body.dataset.view = "lan";
+    LocalNet.keepAwake(true); // screen stays on in a room so the connection is not dropped
     $("#lobbyMyName").value = "";
     $("#chatInput").value = "";
     if (LAN.getRole() === "host") renderChatLog([]);
@@ -368,7 +379,9 @@ window.LanUI = (function () {
     if (!active) return true;
     const host = LAN.getRole() === "host";
     const ok = await UI.confirm(
-      host ? "The room closes for everyone." : "You can rejoin with the Room ID and password.",
+      host
+        ? "The next player becomes the host and the room stays open."
+        : "You can rejoin with the Room ID and password.",
       {
         title: host ? "Close the room?" : "Leave the room?",
         ok: host ? "Close room" : "Leave",
@@ -382,6 +395,7 @@ window.LanUI = (function () {
   function leaveRoom() {
     clearInterval(countdownHandle);
     clearTimeout(retryHandle);
+    LocalNet.keepAwake(false);
     LAN.reset();
     active = false;
     phase = "none";
@@ -390,6 +404,10 @@ window.LanUI = (function () {
     Game.stopTimer();
     Game.forceEnd();
     setStatus("");
+    setHostAway(false);
+    setHints(null);
+    setMatchChat(false);
+    hostId = null;
     renderChatLog([]);
     setUnread(0);
     if (hooks.onExit) hooks.onExit();
@@ -421,7 +439,7 @@ window.LanUI = (function () {
 
   function renderLobby(force) {
     if (!state) return;
-    const host = LAN.getRole() === "host";
+    const host = LAN.isAdmin();
     const mine = me();
     const room = LAN.getRoom() || {};
 
@@ -526,7 +544,7 @@ window.LanUI = (function () {
                           : ""
                     }
                     ${
-                      host && !p.isHost
+                      host && p.id !== myId && !p.isServer
                         ? `<button class="btn-x" type="button" data-kick="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">×</button>`
                         : ""
                     }
@@ -610,13 +628,6 @@ window.LanUI = (function () {
     if (t && !inp.value.trim()) inp.value = t.name; // a team can't be nameless
   }
 
-  function pushConfig() {
-    LAN.setConfig({
-      rounds: parseInt($("#cfgRounds").value, 10),
-      timer: parseInt($("#cfgTimer").value, 10),
-    });
-  }
-
   function shareInvite() {
     const room = LAN.getRoom();
     if (!room) return;
@@ -634,10 +645,29 @@ window.LanUI = (function () {
     UI.shareText(text, "Invite copied");
   }
 
+  function pushConfig() {
+    LAN.setConfig({
+      rounds: parseInt($("#cfgRounds").value, 10),
+      timer: parseInt($("#cfgTimer").value, 10),
+    });
+  }
+
   /* ---------- Callbacks from LAN ---------- */
+
+  let hostId = null;
 
   function onState(s) {
     if (!active && LAN.getRole()) active = true;
+    const h = s.players.find((p) => p.isHost);
+    if (h && hostId && h.id !== hostId) {
+      const mineNow = h.id === LAN.getMyId();
+      // The device that runs the room announces its own take-over elsewhere.
+      if (!mineNow) UI.toast(`${h.name} is now the host`, 3000);
+      else if (LAN.getRole() !== "host") UI.toast("You are the host again", 3000);
+      if (phase === "lobby") lastSig = "";
+      if (phase === "results") showResultControls();
+    }
+    if (h) hostId = h.id;
     state = s;
     if (!s.inMatch) {
       if (phase === "match")
@@ -660,7 +690,6 @@ window.LanUI = (function () {
     phase = "match";
     document.body.dataset.view = "lan";
     document.body.classList.add("in-match");
-    UI.close(el.chatModal);
     UI.close(el.lobbyModal);
     UI.close(el.resultModal);
     UI.close(el.roundModal);
@@ -669,6 +698,7 @@ window.LanUI = (function () {
 
   function onRound(msg) {
     clearInterval(countdownHandle);
+    if (!(msg.done || msg.spectating)) UI.close(el.chatModal); // I am guessing: chat is closed
     showMatchView();
     $("#hudRound").textContent = msg.n;
     $("#hudTotal").textContent = msg.total;
@@ -680,6 +710,9 @@ window.LanUI = (function () {
       done: msg.done,
       won: msg.won,
     });
+    setHints(msg.done ? null : msg.hints);
+    // Chat opens for a player once their own round is over (or they are only watching).
+    setMatchChat(!!(msg.done || msg.spectating));
     if (msg.spectating) setStatus("Match in progress — you'll play from the next round.");
     else if (msg.done) setStatus("Waiting for the other players…");
     else setStatus("");
@@ -700,11 +733,14 @@ window.LanUI = (function () {
   /** Called by main.js when this player's own board is finished. */
   function onLocalFinish(p) {
     if (phase !== "match") return;
+    setHints(null);
+    UI.close(el.hintModal);
+    setMatchChat(true);
     if (p.won) {
-      setStatus("Solved! Waiting for the other players…");
+      setStatus("Solved! You can chat while the others finish.");
       FX.confetti(40);
     } else if (p.reason === "time") setStatus("Time's up!");
-    else setStatus("Out of guesses. Waiting for the other players…");
+    else setStatus("Out of guesses. You can chat while the others finish.");
   }
 
   function setStatus(text) {
@@ -733,28 +769,35 @@ window.LanUI = (function () {
     return "";
   }
 
+  const sameScore = (a, b) => a.score === b.score;
+
   function leaderboardHTML(s, opts) {
     opts = opts || {};
     const myId = LAN.getMyId();
     const rows = ['<div class="lb-section">Teams</div>'];
-    s.teamScores.forEach((t, rank) => {
-      rows.push(`<div class="lb-row rank-${rank + 1}">
-        <span class="lb-rank">${rank + 1}</span>
+    const teamRanks = Rules.ranks(s.teamScores, sameScore);
+    s.teamScores.forEach((t, i) => {
+      rows.push(`<div class="lb-row rank-${teamRanks[i]}">
+        <span class="lb-rank">${teamRanks[i]}</span>
         <span class="lb-name"><span class="swatch" style="background:${color(t.color)}"></span><b>${esc(t.name)}</b>
           <span class="muted">· ${t.members} player${t.members === 1 ? "" : "s"}</span></span>
         <span class="pts">${t.score}</span>
       </div>`);
     });
     rows.push('<div class="lb-section">Players</div>');
-    [...s.players].sort(Rules.comparePlayers).forEach((p, rank) => {
+    const sorted = [...s.players].sort(Rules.comparePlayers);
+    const playerRanks = Rules.ranks(sorted, sameScore);
+    sorted.forEach((p, i) => {
       const team = s.teams ? s.teams[p.team] : state && state.teams[p.team];
       const extra = opts.gained
         ? p.gained > 0
           ? `<span class="tag ok">+${p.gained}</span>`
-          : '<span class="tag">+0</span>'
+          : p.gained < 0
+            ? `<span class="tag bad">−${-p.gained}</span>`
+            : '<span class="tag">+0</span>'
         : statusTag(p);
-      rows.push(`<div class="lb-row rank-${rank + 1}${p.id === myId ? " me" : ""}">
-          <span class="lb-rank">${rank + 1}</span>
+      rows.push(`<div class="lb-row rank-${playerRanks[i]}${p.id === myId ? " me" : ""}">
+          <span class="lb-rank">${playerRanks[i]}</span>
           <span class="lb-name"><span class="swatch" style="background:${color(team && team.color)}"></span>${esc(p.name)} ${extra}</span>
           <span class="pts">${p.score}</span>
         </div>`);
@@ -764,7 +807,7 @@ window.LanUI = (function () {
 
   function renderScores() {
     if (!state) return;
-    const host = LAN.getRole() === "host";
+    const host = LAN.isAdmin();
     $("#leaderboard").innerHTML = leaderboardHTML(state);
     $("#btnEndRound").classList.toggle("hidden", !host);
     $("#btnRestartMatch").classList.toggle("hidden", !host);
@@ -773,6 +816,9 @@ window.LanUI = (function () {
 
   function onRoundEnd(p) {
     Game.forceEnd();
+    UI.close(el.chatModal);
+    setHints(null);
+    UI.close(el.hintModal);
     setStatus("");
     UI.close(el.scoresModal);
     $("#roundTitle").textContent = `Round ${p.round} of ${p.total}`;
@@ -800,24 +846,28 @@ window.LanUI = (function () {
     clearInterval(countdownHandle);
     phase = "results";
     Game.stopTimer();
+    UI.close(el.chatModal);
     Game.forceEnd();
     setStatus("");
     document.body.classList.remove("in-match");
     UI.close(el.roundModal);
     UI.close(el.scoresModal);
 
-    const host = LAN.getRole() === "host";
     const teamsList = p.teamScores || [];
     const players = [...(p.players || [])].sort(Rules.comparePlayers);
-    const topScore = teamsList.length ? teamsList[0].score : 0;
-    const tied = teamsList.filter((t) => t.score === topScore);
-    const isDraw = tied.length > 1;
+    // Only teams that actually have players can win or tie.
+    const active = teamsList.filter((t) => t.members > 0);
+    const topScore = active.length ? active[0].score : 0;
+    const tied = active.filter((t) => t.score === topScore);
+    // A draw with no podium only when every score is exactly zero. Hints can push a score
+    // below zero, and then 0 beats -3 like any other higher score.
+    const nobodyScored = players.every((x) => x.score === 0);
+    const isDraw = nobodyScored || tied.length > 1;
     const badge = (t) =>
       `<span class="badge"><span class="swatch" style="background:${color(t.color)}"></span>${esc(t.name)}</span>`;
 
     const aw = p.awards || { best: null, teams: {} };
     const byId = (id) => players.find((x) => x.id === id) || null;
-    const best = byId(aw.best);
     const mvpOf = (teamId) => byId((aw.teams || {})[teamId]);
 
     const card = el.resultModal.querySelector(".modal-card");
@@ -825,27 +875,45 @@ window.LanUI = (function () {
     const stats = $("#resultStats");
     stats.className = "lan-results";
 
-    $("#resultTitle").textContent = isDraw ? "It's a draw" : "Match over";
-    if (!teamsList.length) $("#resultWord").textContent = "";
-    else if (isDraw)
+    $("#resultTitle").textContent = isDraw ? "DRAW" : "MATCH OVER";
+    if (nobodyScored)
+      $("#resultWord").innerHTML =
+        '<div class="win-team">Nobody scored, so there is no winner.</div>';
+    else if (tied.length > 1)
       $("#resultWord").innerHTML =
         `<div class="win-team">${tied.map(badge).join(" ")} tied on ${topScore} pts</div>`;
-    else
+    else if (active.length === 1)
       $("#resultWord").innerHTML =
-        `<div class="win-team">Winner ${badge(teamsList[0])} with ${topScore} pts</div>`;
+        `<div class="win-team">${badge(active[0])} finished with ${topScore} pts</div>`;
+    else if (active.length)
+      $("#resultWord").innerHTML =
+        `<div class="win-team">Winner ${badge(active[0])} with ${topScore} pts</div>`;
+    else $("#resultWord").textContent = "";
+
+    // Players level on points share a place, a podium step and the Best player card.
+    const places = Rules.ranks(players, sameScore);
+    const leaders = nobodyScored ? [] : players.filter((x) => x.score === players[0].score);
+    const teamPlaces = Rules.ranks(teamsList, sameScore);
 
     stats.innerHTML =
-      podiumHTML(players, p) +
-      restListHTML(players.slice(3)) +
-      (best
-        ? `<div class="award"><span class="award-label">Best player</span>
-            <span class="award-name"><span class="swatch" style="background:${color((teamOf(best, p) || {}).color)}"></span>${esc(best.name)}</span>
-            <span class="award-pts">${best.score} pts · ${best.roundsWon} solved</span></div>`
+      // With no points on the board there is no podium, only the list of players.
+      (nobodyScored
+        ? restListHTML(players, places, 0)
+        : podiumHTML(players, p, places) + restListHTML(players.slice(3), places, 3)) +
+      (leaders.length
+        ? `<div class="award"><span class="award-label">${leaders.length > 1 ? "Best players · tied" : "Best player"}</span>
+            ${leaders
+              .map(
+                (x) =>
+                  `<span class="award-name"><span class="swatch" style="background:${color((teamOf(x, p) || {}).color)}"></span>${esc(x.name)}</span>`,
+              )
+              .join("")}
+            <span class="award-pts">${leaders[0].score} pts${leaders.length > 1 ? " each" : ` · ${leaders[0].roundsWon} solved`}</span></div>`
         : "") +
       `<h3>Teams</h3><div class="team-summary">${teamsList
         .map(
-          (t, i) => `<div class="lb-row rank-${i + 1}">
-            <span class="lb-rank">${i + 1}</span>
+          (t, i) => `<div class="lb-row rank-${nobodyScored ? 0 : teamPlaces[i]}">
+            <span class="lb-rank">${nobodyScored ? "–" : teamPlaces[i]}</span>
             <span class="lb-name"><span class="swatch" style="background:${color(t.color)}"></span><b>${esc(t.name)}</b>
               <span class="muted">· ${t.members}</span>
               ${mvpOf(t.id) ? `<span class="tag ok">MVP ${esc(mvpOf(t.id).name)}</span>` : ""}</span>
@@ -853,19 +921,24 @@ window.LanUI = (function () {
         )
         .join("")}</div>`;
 
+    showResultControls();
+
+    UI.open(el.resultModal);
+    if (!nobodyScored) FX.confetti(90);
+  }
+
+  /** Buttons under the final results; refreshed if the host controls change hands. */
+  function showResultControls() {
+    const host = LAN.isAdmin();
     const again = $("#btnPlayAgain");
     again.classList.toggle("hidden", !host);
     again.textContent = "Play again";
     again.onclick = () => LAN.startMatch();
     $("#btnBackLobby").classList.remove("hidden");
-    $("#btnShare").classList.add("hidden");
     $("#btnResultChat").classList.remove("hidden");
     $("#resultHint").textContent = host
       ? "Play again with the same teams, or go back to the lobby to change them."
       : "Waiting for the host to start the next match.";
-
-    UI.open(el.resultModal);
-    FX.confetti(90);
   }
 
   function teamOf(p, payload) {
@@ -875,28 +948,28 @@ window.LanUI = (function () {
     return t || null;
   }
 
-  function podiumHTML(players, payload) {
+  function podiumHTML(players, payload, places) {
     const top = players.slice(0, 3);
     if (!top.length) return "";
     const order = [1, 0, 2]; // visual order: 2nd, 1st, 3rd
-    const klass = ["silver", "gold", "bronze"];
-    const rankNums = [2, 1, 3];
+    const medal = { 1: "gold", 2: "silver", 3: "bronze" };
     const cells = order
-      .map((idx, col) => {
+      .map((idx) => {
         const p = top[idx];
-        if (!p) return `<div class="podium-spot ${klass[col]} empty"></div>`;
+        if (!p) return ""; // fewer than three players: the others stay centred
+        const place = places[idx]; // players level on points share a place (and a medal)
         const team = teamOf(p, payload);
         const c = color(team && team.color);
         const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
-        return `<div class="podium-spot ${klass[col]}">
+        return `<div class="podium-spot ${medal[place]}">
           <div class="podium-head">
             <div class="podium-avatar" style="background:${c}">${initial}</div>
             <div class="podium-name">${esc(p.name)}</div>
             <div class="podium-score">${p.score} pts</div>
           </div>
           <div class="podium-pedestal">
+            <div class="podium-medal" aria-label="Place ${place}">${place}</div>
             <div class="podium-badge" style="background:${c}">${team ? esc(team.name) : "—"}</div>
-            <div class="podium-rank">${rankNums[col]}</div>
           </div>
         </div>`;
       })
@@ -904,16 +977,17 @@ window.LanUI = (function () {
     return `<div class="podium-wrap"><div class="podium">${cells}</div></div>`;
   }
 
-  function restListHTML(rest) {
+  function restListHTML(rest, places, offset) {
     if (!rest.length) return "";
     const myId = LAN.getMyId();
+    const noRank = offset === 0; // the nobody-scored list
     return (
       '<div class="rest-list">' +
       rest
         .map((p, i) => {
           const team = state && state.teams[p.team];
           return `<div class="lb-row${p.id === myId ? " me" : ""}">
-            <span class="lb-rank">${i + 4}</span>
+            <span class="lb-rank">${noRank ? "–" : places[i + offset]}</span>
             <span class="lb-name"><span class="swatch" style="background:${color(team && team.color)}"></span>${esc(p.name)}</span>
             <span class="pts">${p.score}</span></div>`;
         })
@@ -948,14 +1022,22 @@ window.LanUI = (function () {
     const empty = log.querySelector(".chat-empty");
     if (empty) empty.remove();
     log.insertAdjacentHTML("beforeend", chatRow(m));
+    // The new line slides in: from the right if it is mine, from the left if received.
+    const row = log.lastElementChild;
+    if (row) row.classList.add(m.id === LAN.getMyId() ? "in-sent" : "in-received");
     while (log.children.length > CHAT_DOM_MAX) log.firstElementChild.remove();
     log.scrollTop = log.scrollHeight;
     // Chat closed: count it on the Chat buttons and show a short preview.
     if (!UI.isOpen(el.chatModal) && m.id !== LAN.getMyId()) {
       setUnread(unread + 1);
+      ringChat();
       const text = String(m.text);
       UI.toast(`${m.name}: ${text.length > 60 ? text.slice(0, 60) + "…" : text}`, 2600);
     }
+  }
+
+  function setMatchChat(on) {
+    $("#btnMatchChat").classList.toggle("hidden", !on);
   }
 
   function setUnread(n) {
@@ -963,6 +1045,16 @@ window.LanUI = (function () {
     document.querySelectorAll("[data-chat-badge]").forEach((b) => {
       b.textContent = n > 9 ? "9+" : String(n);
       b.classList.toggle("hidden", n === 0);
+    });
+  }
+
+  /** Wiggle the chat icon and pop its badge when a message arrives. */
+  function ringChat() {
+    document.querySelectorAll(".chat-btn").forEach((b) => {
+      b.classList.remove("ring");
+      void b.offsetWidth; // restart the animation if it is already running
+      b.classList.add("ring");
+      setTimeout(() => b.classList.remove("ring"), 900);
     });
   }
 
@@ -983,7 +1075,61 @@ window.LanUI = (function () {
     input.focus({ preventScroll: true });
   }
 
+  /* ---------- Hints (cost 1 point each) ---------- */
+
+  let hints = null; // { left, max } while I can still take one this round
+
+  /** Show what earlier hints revealed on the keyboard, and whether more can be taken. */
+  function setHints(h) {
+    hints = h && h.left > 0 ? { left: h.left, max: h.max || h.left } : null;
+    if (h) {
+      (h.absent || []).forEach((ch) => Keyboard.setStatus(ch, "absent"));
+      (h.present || []).forEach((ch) => Keyboard.setStatus(ch, "present"));
+    }
+    const b = $("#btnHint");
+    b.classList.toggle("hidden", !h);
+    b.disabled = !hints;
+  }
+
+  function openHint() {
+    if (!hints || phase !== "match" || Game.isFinished()) return;
+    $("#hintLeft").textContent =
+      `${hints.left} of ${hints.max} hint${hints.max === 1 ? "" : "s"} left this round.`;
+    UI.open(el.hintModal);
+  }
+
+  let hintBusy = false;
+  async function takeHint(kind) {
+    if (hintBusy || !hints) return;
+    hintBusy = true;
+    const res = await LAN.requestHint(kind);
+    hintBusy = false;
+    UI.close(el.hintModal);
+    if (!res || !Array.isArray(res.letters)) {
+      return UI.toast((res && res.error) || "No response — try again", 2400);
+    }
+    if (phase !== "match") return;
+    const shown = res.letters.map((ch) => String(ch).toUpperCase()).join(", ");
+    setHints({
+      left: res.left,
+      max: hints ? hints.max : res.left,
+      absent: res.kind === "remove" ? res.letters : [],
+      present: res.kind === "yellow" ? res.letters : [],
+    });
+    UI.haptic(15);
+    UI.toast(
+      res.kind === "yellow"
+        ? `Hint: the word has the letter ${shown} (−1 point)`
+        : `Hint: no ${shown} in the word (−1 point)`,
+      3200,
+    );
+  }
+
   /* ---------- Connection problems ---------- */
+
+  function setHostAway(on) {
+    $("#netBanner").classList.toggle("hidden", !on);
+  }
 
   function onConnection(kind) {
     if (!active) return;
@@ -992,6 +1138,9 @@ window.LanUI = (function () {
       UI.toast("The host closed the room", 2600);
       return;
     }
+    if (kind === "hostAway") return setHostAway(true);
+    if (kind === "hostBack") return setHostAway(false);
+    setHostAway(false);
     $("#reconnectText").textContent = "Trying to reconnect…";
     $("#btnReconnect").classList.add("hidden");
     UI.open(el.reconnectModal);
@@ -1001,14 +1150,27 @@ window.LanUI = (function () {
   function tryRejoin(attempt, manual) {
     clearTimeout(retryHandle);
     if (!active) return;
-    $("#reconnectText").textContent = "Trying to reconnect…";
+    $("#reconnectText").textContent =
+      attempt < 3
+        ? "Trying to reconnect…"
+        : "Still trying… If the host has left, the next player takes over. Your points are kept.";
     $("#btnReconnect").classList.add("hidden");
     retryHandle = setTimeout(
       () => {
         LAN.rejoin()
-          .then(() => {
+          .then((res) => {
+            setHostAway(false);
             UI.close(el.reconnectModal);
-            UI.toast("Reconnected");
+            if (res && res.host) {
+              UI.toast(
+                phase === "match"
+                  ? "You are now the host. The round restarts with a new word."
+                  : "You are now the host",
+                3600,
+              );
+              if (phase === "lobby") renderLobby(true);
+              if (phase === "match") setStatus("New host. The round restarts in a moment…");
+            } else UI.toast("Reconnected");
           })
           .catch((err) => {
             if (!active) return;

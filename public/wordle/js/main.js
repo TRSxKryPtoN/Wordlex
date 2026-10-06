@@ -59,6 +59,9 @@
     },
   });
 
+  // A Random puzzle lasts until the app is closed; the Daily word is kept for the day.
+  Store.remove("game:random");
+
   // Show a board behind the home screen straight away.
   Game.start(settings.soloMode === "random" ? "random" : "daily");
   goHome();
@@ -168,7 +171,6 @@
   function onGameFinish(p) {
     if (p.mode === "lan") return LanUI.onLocalFinish(p);
 
-    const r = Game.getResult();
     const card = resultModal.querySelector(".modal-card");
     card.classList.remove("wide");
     const statsEl = $("#resultStats");
@@ -188,10 +190,7 @@
       enterSolo("random", true);
     };
     $("#btnBackLobby").classList.add("hidden");
-    $("#btnShare").classList.remove("hidden");
     $("#btnResultChat").classList.add("hidden");
-    $("#btnShare").textContent = "Share";
-    $("#btnShare").onclick = () => shareSolo(r);
     $("#resultHint").textContent = p.mode === "daily" ? nextDailyText() : "";
     if (p.mode === "daily") {
       setStatus(
@@ -200,16 +199,6 @@
     }
     if (p.won) FX.confetti(p.attempts <= 3 ? 90 : 45);
     UI.open(resultModal);
-  }
-
-  function shareSolo(r) {
-    const squares = settings.contrast
-      ? { correct: "🟦", present: "🟧", absent: "⬜" }
-      : { correct: "🟩", present: "🟨", absent: "⬜" };
-    const grid = r.results.map((row) => row.map((s) => squares[s]).join("")).join("\n");
-    const tag = r.mode === "daily" ? `Wordlex #${r.day}` : "Wordlex";
-    const score = r.won ? `${r.guesses.length}/6` : "X/6";
-    UI.shareText(`${tag} ${score}\n\n${grid}`, "Result copied");
   }
 
   /* ---------- Stats ---------- */
@@ -306,6 +295,45 @@
   // Offline cache for the website version (native apps already ship the files).
   // Never on localhost: a cached copy there only gets in the way while developing.
   const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  // Website only: "Get the Android app" on the home screen. Never shown inside the app.
+  // Paste the download link (MediaFire, Google Drive, ...) between the quotes below.
+  // Left empty, the button shows only if the APK is on the site itself
+  // (public/downloads/Wordlex.apk).
+  const APK_URL = "https://www.mediafire.com/file/l76cm7hhhdcveh8/Wordlex.apk/file";
+
+  // Website only: visitor counts with Vercel Web Analytics. It works once "Analytics" is
+  // enabled for the project in the Vercel dashboard; anywhere else the script is simply absent.
+  if (!cap && /^https:$/.test(location.protocol) && !isLocal) {
+    window.va =
+      window.va ||
+      function () {
+        (window.vaq = window.vaq || []).push(arguments);
+      };
+    const s = document.createElement("script");
+    s.defer = true;
+    s.src = "/_vercel/insights/script.js";
+    s.onerror = () => {};
+    document.head.appendChild(s);
+  }
+
+  if (!cap && /^https?:$/.test(location.protocol)) {
+    const link = $("#apkLink");
+    if (/^https?:\/\//i.test(APK_URL)) {
+      link.href = APK_URL;
+      link.removeAttribute("download"); // an outside page: open it instead of saving it
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.classList.remove("hidden");
+    } else {
+      fetch(link.href, { method: "HEAD", cache: "no-store" })
+        .then((res) => {
+          const type = res.headers.get("content-type") || "";
+          if (res.ok && !/text\/html/i.test(type)) link.classList.remove("hidden");
+        })
+        .catch(() => {});
+    }
+  }
+
   if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol) && !cap) {
     if (isLocal) {
       navigator.serviceWorker

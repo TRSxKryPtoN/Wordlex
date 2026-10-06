@@ -1313,17 +1313,18 @@ body[data-view="solo"] .match-hud {
   background: var(--surface-2);
   color: var(--muted);
 }
+/* Places 1, 2, 3: gold, silver, bronze. */
 .lb-row.rank-1 .lb-rank {
-  background: #e9b93f;
-  color: #1a1300;
+  background: linear-gradient(145deg, #ffe08a, #e0a92a);
+  color: #4a3200;
 }
 .lb-row.rank-2 .lb-rank {
-  background: #bcc3ce;
-  color: #1a1d24;
+  background: linear-gradient(145deg, #eef1f5, #a9b2bf);
+  color: #2b313a;
 }
 .lb-row.rank-3 .lb-rank {
-  background: #cf8d57;
-  color: #1a0d00;
+  background: linear-gradient(145deg, #f0b98a, #b9703a);
+  color: #3d1d06;
 }
 
 /* ---- Results ---- */
@@ -1410,12 +1411,13 @@ body[data-view="solo"] .match-hud {
   overflow: hidden;
 }
 .podium {
-  display: grid;
-  grid-template-columns: 1fr 1.15fr 1fr;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
   gap: 8px;
-  align-items: end;
 }
 .podium-spot {
+  flex: 0 1 32%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1461,6 +1463,25 @@ body[data-view="solo"] .match-hud {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+/* Metal colours for a place: highlight, body, shade and the engraved number. */
+.podium-spot.gold {
+  --m-hi: #fff1b8;
+  --m-mid: #f0bd3a;
+  --m-lo: #a9770c;
+  --m-ink: #6b4700;
+}
+.podium-spot.silver {
+  --m-hi: #ffffff;
+  --m-mid: #c5ccd6;
+  --m-lo: #76808e;
+  --m-ink: #414a57;
+}
+.podium-spot.bronze {
+  --m-hi: #ffd9b5;
+  --m-mid: #cf8448;
+  --m-lo: #7f4318;
+  --m-ink: #55290a;
+}
 .podium-pedestal {
   width: 100%;
   border-radius: 12px 12px 0 0;
@@ -1468,7 +1489,55 @@ body[data-view="solo"] .match-hud {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  /* a brushed-metal bar in the same metal as its medal */
+  background: linear-gradient(
+    180deg,
+    var(--m-mid) 0%,
+    color-mix(in srgb, var(--m-mid) 70%, var(--m-lo)) 55%,
+    var(--m-lo) 100%
+  );
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--m-hi) 80%, transparent);
+}
+/* The medal is pressed into the bar: same metal, soft edges, slightly see-through,
+   so it reads as part of the bar and not as a sticker on top of it. */
+.podium-medal {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1;
+  color: color-mix(in srgb, var(--m-ink) 80%, transparent);
+  text-shadow: 0 1px 0 color-mix(in srgb, var(--m-hi) 55%, transparent);
+  opacity: 0.82;
+  /* a faint ridged rim, only a shade away from the bar itself */
+  background: repeating-conic-gradient(
+    color-mix(in srgb, var(--m-lo) 45%, var(--m-mid)) 0deg 9deg,
+    color-mix(in srgb, var(--m-hi) 40%, var(--m-mid)) 9deg 18deg
+  );
+  /* sunk in: dark lip above, light lip below, no drop shadow */
+  box-shadow:
+    inset 0 2px 3px color-mix(in srgb, var(--m-lo) 70%, transparent),
+    0 1px 0 color-mix(in srgb, var(--m-hi) 55%, transparent);
+  isolation: isolate;
+}
+.podium-medal::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 36% 30%,
+    color-mix(in srgb, var(--m-hi) 55%, var(--m-mid)) 0%,
+    var(--m-mid) 55%,
+    color-mix(in srgb, var(--m-lo) 45%, var(--m-mid)) 100%
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--m-lo) 45%, transparent);
 }
 .podium-badge {
   max-width: 94%;
@@ -1480,24 +1549,16 @@ body[data-view="solo"] .match-hud {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.podium-rank {
-  font-size: 30px;
-  font-weight: 900;
-  line-height: 1;
-  color: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--m-hi) 55%, transparent);
 }
 .podium-spot.gold .podium-pedestal {
-  background: #e9b93f;
-  min-height: 112px;
+  min-height: 156px;
 }
 .podium-spot.silver .podium-pedestal {
-  background: #bcc3ce;
-  min-height: 86px;
+  min-height: 128px;
 }
 .podium-spot.bronze .podium-pedestal {
-  background: #cf8d57;
-  min-height: 70px;
+  min-height: 104px;
 }
 
 /* ---- Stats distribution ---- */
@@ -1697,7 +1758,7 @@ body.rainbow .bt {
   align-items: center;
   gap: 4px;
   padding: 12px;
-  border: 1px solid #e9b93f;
+  border: 1px solid #e0a92a;
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, #e9b93f 12%, var(--bg));
   text-align: center;
@@ -1897,4 +1958,263 @@ body.rainbow .bt {
   text-align: center;
   padding: 8px 4px;
   line-height: 1.4;
+}
+
+/* ---- Chat animations ---- */
+/* A new message slides into the list. */
+.chat-msg.in-received {
+  animation: chat-in-left 0.28s cubic-bezier(0.2, 0.8, 0.3, 1.2);
+}
+.chat-msg.in-sent {
+  animation: chat-in-right 0.28s cubic-bezier(0.2, 0.8, 0.3, 1.2);
+}
+@keyframes chat-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes chat-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* The chat icon rings and its badge pops when a message arrives while chat is closed. */
+.chat-btn.ring svg {
+  animation: chat-ring 0.8s ease;
+  transform-origin: 50% 20%;
+}
+.chat-btn.ring .chat-badge {
+  animation: chat-badge-pop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.6);
+}
+@keyframes chat-ring {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  15% {
+    transform: rotate(-16deg) scale(1.15);
+  }
+  30% {
+    transform: rotate(14deg) scale(1.15);
+  }
+  45% {
+    transform: rotate(-10deg) scale(1.1);
+  }
+  60% {
+    transform: rotate(8deg) scale(1.05);
+  }
+  80% {
+    transform: rotate(-3deg);
+  }
+}
+@keyframes chat-badge-pop {
+  0% {
+    transform: scale(0.3);
+  }
+  60% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+/* The Send button gives a small push when tapped. */
+.chat-form .btn:active {
+  transform: scale(0.93);
+}
+
+/* ---- Hints (match) ---- */
+.hint-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+.hint-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--present);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hint-btn:disabled {
+  opacity: 0.45;
+}
+.hud-timer + .hint-btn {
+  margin-left: 0;
+}
+.hud-timer.hidden + .hint-btn {
+  margin-left: auto;
+}
+.hint-btn + .btn-mini {
+  margin-left: 0 !important;
+}
+.hint-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.hint-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text);
+}
+.hint-option:active {
+  background: var(--key-bg);
+}
+.hint-keys {
+  flex: none;
+  display: flex;
+  gap: 3px;
+  width: 92px;
+  justify-content: center;
+}
+.hint-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 14px;
+}
+.hint-text .muted {
+  font-size: 12.5px;
+}
+.hint-cost {
+  flex: none;
+  font-weight: 800;
+  color: var(--danger);
+}
+
+/* ---- "Host is away" notice ---- */
+.net-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.net-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--present);
+  animation: net-pulse 1.2s ease-in-out infinite;
+}
+@keyframes net-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+/* In the lobby and on the results the board is covered, so float the notice on top. */
+body:not(.in-match) .net-banner {
+  position: fixed;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  transform: translateX(-50%);
+  z-index: 300;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+}
+
+/* ---- Chat button in the match bar (shown once my round is over) ---- */
+.icon-btn.hud-chat {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+}
+.hint-btn.hidden + .hud-chat {
+  margin-left: auto;
+}
+.hud-timer:not(.hidden) ~ .hud-chat {
+  margin-left: 0;
+}
+.hud-chat + .btn-mini {
+  margin-left: 0 !important;
+}
+
+/* ---- Match results: scores in capitals ---- */
+.lan-results .podium-score,
+.lan-results .award-pts,
+.lan-results h3,
+.win-team {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.win-team {
+  font-weight: 700;
+}
+.win-team .badge {
+  text-transform: none;
+  letter-spacing: 0;
+}
+#roundTitle {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ---- Website only: download the Android app ---- */
+.apk-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  text-align: left;
+  text-decoration: none;
+  color: var(--text);
+  background: color-mix(in srgb, var(--correct) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--correct) 45%, var(--border));
+  border-radius: var(--radius-lg);
+}
+.apk-link svg {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: var(--correct);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.apk-link > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+.apk-link > span > span {
+  font-size: 12.5px;
+  color: var(--muted);
 }

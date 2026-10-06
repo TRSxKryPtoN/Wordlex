@@ -381,5 +381,36 @@ window.LocalNet = (function () {
     };
   }
 
-  return { PORT, available, myIp, scan, HostPeer, GuestPeer };
+  /* ---------- Keep the screen on while in a room ----------
+     When the screen turns off the phone pauses the app and the connection drops. */
+
+  let wakeLock = null;
+  let wantAwake = false;
+
+  function webWakeLock() {
+    if (!wantAwake || wakeLock || !navigator.wakeLock || document.hidden) return;
+    navigator.wakeLock
+      .request("screen")
+      .then((lock) => {
+        wakeLock = lock;
+        lock.addEventListener("release", () => (wakeLock = null));
+        if (!wantAwake) lock.release();
+      })
+      .catch(() => {});
+  }
+
+  function keepAwake(on) {
+    wantAwake = !!on;
+    const native = plugin();
+    if (native && native.keepAwake) {
+      Promise.resolve(native.keepAwake({ on: wantAwake })).catch(() => {});
+    }
+    if (wantAwake) webWakeLock();
+    else if (wakeLock) wakeLock.release().catch(() => {});
+  }
+
+  // The browser lets go of the lock whenever the page is hidden; take it again on return.
+  document.addEventListener("visibilitychange", webWakeLock);
+
+  return { PORT, available, myIp, scan, keepAwake, HostPeer, GuestPeer };
 })();

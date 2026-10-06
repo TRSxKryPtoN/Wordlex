@@ -40,7 +40,7 @@
         true,
       );
     </script>
-    <link rel="stylesheet" href="./css/styles.css?v=2.8.0" />
+    <link rel="stylesheet" href="./css/styles.css?v=2.13.2" />
   </head>
   <body data-theme="dark" data-view="home">
     <div id="app">
@@ -97,12 +97,36 @@
           <div class="hud-row">
             <span class="hud-round">Round <b id="hudRound">1</b>/<b id="hudTotal">3</b></span>
             <span class="hud-timer hidden" id="hudTimer" aria-label="Time left">0:00</span>
+            <button class="btn-mini hint-btn" id="btnHint" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 18h6M10 21h4" />
+                <path
+                  d="M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3z"
+                />
+              </svg>
+              Hint
+            </button>
+            <button
+              class="icon-btn chat-btn boxed hud-chat hidden"
+              id="btnMatchChat"
+              type="button"
+              aria-label="Chat"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 5h16v11H9l-5 4z" />
+              </svg>
+              <span class="chat-badge hidden" data-chat-badge></span>
+            </button>
             <button class="btn-mini" id="btnScores" type="button">Scores</button>
           </div>
           <div class="timer-bar hidden" id="timerBar"><span></span></div>
           <div class="team-chips" id="teamChips" aria-label="Team scores"></div>
         </div>
 
+        <p class="net-banner hidden" id="netBanner" role="status">
+          <span class="net-dot" aria-hidden="true"></span>Host is away. The game continues when they
+          are back.
+        </p>
         <p class="status-line" id="statusLine" aria-live="polite"></p>
 
         <div class="board-wrap">
@@ -159,6 +183,17 @@
             >
           </button>
         </div>
+        <a
+          class="apk-link hidden"
+          id="apkLink"
+          href="../downloads/Wordlex.apk"
+          download="Wordlex.apk"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14" />
+          </svg>
+          <span><b>Get the Android app</b><span>Play offline on the same Wi-Fi</span></span>
+        </a>
         <button class="link-btn" id="homeHelp" type="button">How to play</button>
       </div>
     </div>
@@ -197,7 +232,9 @@
         <p class="body">
           One player hosts a room and shares the Room ID and password. Everyone gets the same word
           each round. Fewer guesses score more points, and with a timer on, fast solves earn a
-          bonus. A team's score is the average of its players.
+          bonus. A team's score is the average of its players. A <b>Hint</b> costs 1 point: remove
+          three letters that are not in the word, or reveal one letter that is. Up to three hints a
+          round.
         </p>
       </div>
     </div>
@@ -218,7 +255,6 @@
         <div class="modal-actions">
           <button class="btn primary" id="btnPlayAgain" type="button">Play again</button>
           <button class="btn ghost" id="btnBackLobby" type="button">Back to lobby</button>
-          <button class="btn ghost" id="btnShare" type="button">Share</button>
           <button
             class="icon-btn chat-btn boxed"
             id="btnResultChat"
@@ -249,6 +285,44 @@
         <div id="roundWord" class="result-word"></div>
         <div id="roundLeaderboard" class="leaderboard"></div>
         <p id="roundNextHint" class="hint"></p>
+      </div>
+    </div>
+
+    <!-- ============== HINT (match) ============== -->
+    <div
+      class="modal hidden"
+      id="hintModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="hintTitle"
+    >
+      <div class="modal-card small">
+        <button class="modal-close" data-close type="button" aria-label="Close">×</button>
+        <h2 id="hintTitle">Take a hint?</h2>
+        <p class="sub">Each hint costs <b>1 point</b>. <span id="hintLeft"></span></p>
+        <div class="hint-options">
+          <button class="hint-option" type="button" data-hint="remove">
+            <span class="hint-keys" aria-hidden="true"
+              ><span class="tile mini absent">X</span><span class="tile mini absent">Q</span
+              ><span class="tile mini absent">Z</span></span
+            >
+            <span class="hint-text"
+              ><b>Remove letters</b
+              ><span class="muted">Greys out 3 letters that are not in the word</span></span
+            >
+            <span class="hint-cost">−1</span>
+          </button>
+          <button class="hint-option" type="button" data-hint="yellow">
+            <span class="hint-keys" aria-hidden="true"
+              ><span class="tile mini present">?</span></span
+            >
+            <span class="hint-text"
+              ><b>Reveal a letter</b
+              ><span class="muted">Shows one letter that is in the word (yellow)</span></span
+            >
+            <span class="hint-cost">−1</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -332,7 +406,7 @@
             ><input type="checkbox" id="toggleHaptics" /><span class="slider"></span
           ></span>
         </label>
-        <p class="version">Wordlex v2.8</p>
+        <p class="version">Wordlex v2.13.2</p>
       </div>
     </div>
 
@@ -632,17 +706,17 @@
     </div>
 
     <!-- Word lists first, then the game. PeerJS loads only when multiplayer is used. -->
-    <script src="./data/words.js?v=2.8.0"></script>
-    <script src="./js/rules.js?v=2.8.0"></script>
-    <script src="./js/store.js?v=2.8.0"></script>
-    <script src="./js/stats.js?v=2.8.0"></script>
-    <script src="./js/ui.js?v=2.8.0"></script>
-    <script src="./js/keyboard.js?v=2.8.0"></script>
-    <script src="./js/game.js?v=2.8.0"></script>
-    <script src="./js/localnet.js?v=2.8.0"></script>
-    <script src="./js/lan.js?v=2.8.0"></script>
-    <script src="./js/fx.js?v=2.8.0"></script>
-    <script src="./js/lanui.js?v=2.8.0"></script>
-    <script src="./js/main.js?v=2.8.0"></script>
+    <script src="./data/words.js?v=2.13.2"></script>
+    <script src="./js/rules.js?v=2.13.2"></script>
+    <script src="./js/store.js?v=2.13.2"></script>
+    <script src="./js/stats.js?v=2.13.2"></script>
+    <script src="./js/ui.js?v=2.13.2"></script>
+    <script src="./js/keyboard.js?v=2.13.2"></script>
+    <script src="./js/game.js?v=2.13.2"></script>
+    <script src="./js/localnet.js?v=2.13.2"></script>
+    <script src="./js/lan.js?v=2.13.2"></script>
+    <script src="./js/fx.js?v=2.13.2"></script>
+    <script src="./js/lanui.js?v=2.13.2"></script>
+    <script src="./js/main.js?v=2.13.2"></script>
   </body>
 </html>

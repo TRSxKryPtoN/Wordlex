@@ -89,3 +89,10 @@ test("MVP: top score, ties broken by rounds solved, then fewer guesses, then tim
   assert.equal(Rules.pickMvp([p("a", 0, 0, 0, 0)]), null);
   assert.equal(Rules.pickMvp([]), null);
 });
+
+test("ranks: level scores share a place", () => {
+  const same = (a, b) => a === b;
+  assert.deepEqual(Rules.ranks([9, 9, 7, 5, 5, 1], same), [1, 1, 3, 4, 4, 6]);
+  assert.deepEqual(Rules.ranks([0, 0], same), [1, 1]);
+  assert.deepEqual(Rules.ranks([], same), []);
+});

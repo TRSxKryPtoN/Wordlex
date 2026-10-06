@@ -15,6 +15,7 @@
 import Capacitor
 import Foundation
 import Network
+import UIKit
 
 @objc(LocalRoomPlugin)
 public class LocalRoomPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -26,7 +27,8 @@ public class LocalRoomPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "disconnect", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLocalIp", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "findHosts", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "findHosts", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "keepAwake", returnType: CAPPluginReturnPromise)
     ]
 
     private let queue = DispatchQueue(label: "wordlex.localroom")
@@ -154,6 +156,15 @@ public class LocalRoomPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func stop(_ call: CAPPluginCall) {
         queue.async {
             self.stopServer()
+            call.resolve()
+        }
+    }
+
+    /// keepAwake({ on }): keep the screen on while in a room.
+    @objc func keepAwake(_ call: CAPPluginCall) {
+        let on = call.getBool("on") ?? true
+        DispatchQueue.main.async {
+            UIApplication.shared.isIdleTimerDisabled = on
             call.resolve()
         }
     }

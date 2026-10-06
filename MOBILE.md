@@ -125,3 +125,9 @@ offline rooms: a web page cannot run the host's server.
 3. In `android/app/build.gradle` dependencies add
    `implementation 'org.java-websocket:Java-WebSocket:1.5.6'`.
 4. In `AndroidManifest.xml` add `android:usesCleartextTraffic="true"` to `<application>`.
+5. Copy `mobile/android/RoomService.java` next to it as well (same package line), and add
+   the `<service android:name=".RoomService" ...>` entry and the `FOREGROUND_SERVICE`,
+   `FOREGROUND_SERVICE_CONNECTED_DEVICE`, `CHANGE_NETWORK_STATE`, `CHANGE_WIFI_STATE`,
+   `WAKE_LOCK` and `POST_NOTIFICATIONS` permissions shown in this project's
+   `android/app/src/main/AndroidManifest.xml`. This keeps a room running while the app
+   is in the background.

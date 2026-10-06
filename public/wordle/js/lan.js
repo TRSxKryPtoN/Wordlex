@@ -26,10 +26,14 @@ window.LAN = (function () {
   const REVEAL_MS = 1900; // let the last tile flip finish first
   const GRACE_MS = 1500; // network slack after the timer hits zero
   const PING_MS = 3000;
-  const DEAD_MS = 10000;
+  const DEAD_MS = 45000; // patient: a phone whose screen went off should not be dropped at once
   const OPEN_TIMEOUT_MS = 15000;
   const GUESS_TIMEOUT_MS = 8000;
   const MAX_FAILS_PER_MIN = 8;
+  const RESUME_MS = 7000; // pause before the next word after a new host takes over
+  const QUIET_MS = 9000; // no word from the host for this long: tell the player it is away
+  const HINTS_PER_ROUND = 3;
+  const HINT_REMOVE_COUNT = 3; // letters greyed out by one "remove letters" hint
 
   const COLORS = ["#e3553f", "#3a6df0", "#4ea84e", "#d6a23a", "#9b59b6", "#1abc9c"];
   const ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
@@ -50,6 +54,10 @@ window.LAN = (function () {
   let cfg = { rounds: 3, timer: 0 };
   let match = null;
   let fails = [];
+  // The player who created the room. While they are in the room they hold the host
+  // controls, even if the room itself is now running on another player's device.
+  let ownerId = null;
+  let ownerName = "";
   let chatLog = []; // last messages, replayed to players who join or rejoin
 
   // Guest state
@@ -59,6 +67,9 @@ window.LAN = (function () {
   let seq = 0;
   const waiting = new Map(); // seq -> resolve
   let leaving = false;
+  let handover = false; // the host said goodbye: the next player takes over at once
+  let rejoinFails = 0; // failed attempts to get back since the connection was lost
+  let hostQuiet = false; // the host has stopped answering (app in the background?)
 
   /* ===================== Helpers ===================== */
 
@@ -173,10 +184,19 @@ window.LAN = (function () {
     return libPromise;
   }
 
+  let lastTick = 0;
+
   function startHeartbeat() {
     stopHeartbeat();
+    lastTick = Date.now();
     pingHandle = setInterval(() => {
       const now = Date.now();
+      // If this tick is very late, this phone's own timers were paused (app minimised or
+      // screen off). Its clock says nothing about the others, so start the count again
+      // instead of declaring everyone lost.
+      const gap = now - lastTick;
+      lastTick = now;
+      if (gap > PING_MS * 3) return wake(gap);
       if (role === "host") {
         players.forEach((p) => {
           if (p.isHost || !p.connected) return;
@@ -188,10 +208,67 @@ window.LAN = (function () {
         });
       } else if (role === "guest" && conn) {
         if (now - lastSeen > DEAD_MS) handleLost();
-        else send(conn, { type: "ping" });
+        else {
+          send(conn, { type: "ping" });
+          if (!hostQuiet && now - lastSeen > QUIET_MS) {
+            hostQuiet = true;
+            fire("onConnection", "hostAway");
+          }
+        }
       }
     }, PING_MS);
   }
+
+  /** Called when the app comes back to the front, or its timers resume after a pause. */
+  function wake(gap) {
+    const now = Date.now();
+    if (!gap) gap = now - lastTick;
+    lastTick = now;
+    if (role === "host") {
+      // Online rooms: get back onto the pairing server so players can join and rejoin.
+      if (mode === "online" && peer && peer.disconnected && !peer.destroyed) {
+        try {
+          peer.reconnect();
+        } catch (e) {
+          /* ignore */
+        }
+      }
+      // Away for a long time: the players may have moved on with a new host.
+      if (gap > DEAD_MS && mode === "local" && players.length > 1) lookForNewHost();
+      // The host's phone was asleep, so nobody could get a guess checked. Give that time
+      // back to a timed round instead of ending it the moment the host returns.
+      if (gap > PING_MS * 3 && match && match.active && match.endsAt) {
+        match.endsAt += gap;
+        match.startedAt += gap;
+        clearTimeout(match.deadlineT);
+        match.deadlineT = setTimeout(onDeadline, Math.max(0, match.endsAt - now) + GRACE_MS);
+        players.forEach((p) => {
+          if (p.isHost) fire("onRound", roundMsg(p));
+          else if (p.connected) send(p.conn, roundMsg(p));
+        });
+      }
+      players.forEach((p) => {
+        if (!p.isHost && p.connected) {
+          p.lastSeen = now;
+          send(p.conn, { type: "ping" });
+        }
+      });
+      emitState();
+    } else if (role === "guest") {
+      lastSeen = now;
+      if (conn && conn.open)
+        send(conn, { type: "sync" }); // refresh scores and the board
+      else if (conn) handleLost(); // the link really dropped while away: rejoin now
+    }
+  }
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && role) wake();
+    });
+    window.addEventListener("online", () => role && wake());
+  }
+
   function stopHeartbeat() {
     if (pingHandle) clearInterval(pingHandle);
     pingHandle = null;
@@ -240,6 +317,8 @@ window.LAN = (function () {
             myId = "host";
             teams = sanitizeTeams(opts.teams);
             cfg = sanitizeCfg(opts.cfg);
+            ownerId = "host";
+            ownerName = Rules.cleanText(opts.name, NAME_MAX) || "Host";
             players = [
               {
                 id: "host",
@@ -263,7 +342,7 @@ window.LAN = (function () {
             if (peer === p && !p.destroyed) setTimeout(() => peer === p && p.reconnect(), 2000);
           });
           p.on("error", (err) => {
-            if (settled) return;
+            if (settled) return onHostPeerError(p, err);
             settled = true;
             clearTimeout(timeout);
             try {
@@ -349,6 +428,15 @@ window.LAN = (function () {
     }
     const token = typeof msg.token === "string" && msg.token.length >= 8 ? msg.token : null;
     let p = token ? players.find((x) => x.token === token) : null;
+    if (!p && typeof msg.pid === "string") {
+      // The room moved to a new host, who knows the players only by their id.
+      // Only an offline seat can be taken back.
+      p = players.find((x) => x.id === msg.pid && !x.isHost && !x.connected && !x.token) || null;
+      if (p) {
+        p.token = token;
+        p.name = Rules.cleanText(msg.name, NAME_MAX) || p.name;
+      }
+    }
     if (!p && match) {
       // Someone who left mid-match (or refreshed the page) and came back under the same
       // name gets their old seat back: score, team and this round's guesses.
@@ -357,6 +445,11 @@ window.LAN = (function () {
       p = players.find((x) => !x.isHost && !x.connected && x.name.toLowerCase() === wanted) || null;
       if (p) p.token = token;
     }
+    // The room's creator coming back under their own name gets the host controls again.
+    const returningOwner =
+      !!ownerName &&
+      (Rules.cleanText(msg.name, NAME_MAX) || "").toLowerCase() === ownerName.toLowerCase() &&
+      !players.some((x) => x.id === ownerId && x.connected);
     if (p) {
       // A known player coming back (dropped connection / app was backgrounded).
       const old = p.conn;
@@ -382,8 +475,9 @@ window.LAN = (function () {
       };
       players.push(p);
     }
+    if (returningOwner) ownerId = p.id;
     send(c, { type: "hello", you: { id: p.id } });
-    send(c, { type: "chatLog", items: chatLog });
+    send(c, { type: "chatLog", items: chatFor(p) });
     emitState();
     if (match && match.active) send(c, roundMsg(p));
     return p;
@@ -395,7 +489,17 @@ window.LAN = (function () {
         break;
       case "setName":
         p.name = Rules.cleanText(msg.name, NAME_MAX) || "Player";
+        if (p.id === ownerId) ownerName = p.name;
         emitState();
+        break;
+      case "admin":
+        // Host controls used by the room's creator from a device that is not running the room.
+        if (p.id !== adminId()) break;
+        if (msg.cmd === "start") hostStartMatch();
+        else if (msg.cmd === "config") hostSetConfig(msg.arg);
+        else if (msg.cmd === "kick") hostKick(msg.arg);
+        else if (msg.cmd === "removeTeam") hostRemoveTeam(msg.arg);
+        else if (msg.cmd === "endRound") endRound();
         break;
       case "chooseTeam":
         hostChooseTeam(p, msg.team);
@@ -410,6 +514,12 @@ window.LAN = (function () {
         const res = submitGuessFor(p, msg.guess);
         send(p.conn, Object.assign({ type: "guessResult", seq: msg.seq }, res));
         if (res.result) afterGuess();
+        break;
+      }
+      case "hint": {
+        const res = hintFor(p, msg.kind);
+        send(p.conn, Object.assign({ type: "hintResult", seq: msg.seq }, res));
+        if (res.letters) emitState();
         break;
       }
       case "sync":
@@ -504,7 +614,8 @@ window.LAN = (function () {
       id: p.id,
       name: p.name,
       team: p.team,
-      isHost: !!p.isHost,
+      isHost: p.id === adminId(), // holds the host controls
+      isServer: !!p.isHost, // the room runs on this player's device
       connected: !!p.connected,
       score: p.score,
       roundsWon: p.roundsWon,
@@ -513,6 +624,7 @@ window.LAN = (function () {
       tries: p.r ? p.r.guesses.length : 0,
       status,
       gained: p.r && p.r.done ? p.r.points || 0 : 0,
+      hints: p.r ? p.r.hintCost : 0,
     };
   }
 
@@ -541,7 +653,22 @@ window.LAN = (function () {
       round: match ? match.roundIndex + 1 : 0,
       total: match ? match.rounds : cfg.rounds,
       roomId,
+      ownerId,
+      ownerName,
     };
+  }
+
+  /** Who holds the host controls: the room's creator while present, else the device running it. */
+  function adminId() {
+    if (players.some((p) => p.id === ownerId && p.connected)) return ownerId;
+    const h = hostPlayer();
+    return h ? h.id : null;
+  }
+
+  function hostSetConfig(c) {
+    if (role !== "host" || match) return;
+    cfg = sanitizeCfg(Object.assign({}, cfg, c));
+    emitState();
   }
 
   function broadcast(obj) {
@@ -609,11 +736,21 @@ window.LAN = (function () {
     match.endsAt = match.timer > 0 ? match.startedAt + match.timer * 1000 : 0;
     match.pending = new Set();
     players.forEach((p) => {
-      p.r = p.connected ? { guesses: [], results: [], done: false, won: false, points: 0 } : null;
+      p.r = p.connected
+        ? {
+            guesses: [],
+            results: [],
+            done: false,
+            won: false,
+            points: 0,
+            hintCost: 0,
+            hints: { absent: [], present: [] },
+          }
+        : null;
       if (p.r) match.pending.add(p.id);
     });
     if (match.timer > 0) {
-      match.deadlineT = setTimeout(endRound, match.timer * 1000 + GRACE_MS);
+      match.deadlineT = setTimeout(onDeadline, match.timer * 1000 + GRACE_MS);
     }
     players.forEach((p) => {
       if (p.isHost) fire("onRound", roundMsg(p));
@@ -634,7 +771,59 @@ window.LAN = (function () {
       done: r ? r.done : true,
       won: r ? r.won : false,
       spectating: !r,
+      hints: r
+        ? {
+            absent: r.hints.absent,
+            present: r.hints.present,
+            left: HINTS_PER_ROUND - r.hintCost,
+            max: HINTS_PER_ROUND,
+          }
+        : null,
     };
+  }
+
+  /** The round timer ran out. If it is late because this phone was asleep, wake() extends it. */
+  function onDeadline() {
+    if (Date.now() - lastTick > PING_MS * 3) return wake();
+    endRound();
+  }
+
+  /**
+   * A hint costs 1 point, taken at once (the score can go below zero).
+   *   "remove": greys out a few letters that are not in the word
+   *   "yellow": shows one letter that is in the word, without its position
+   * Returns { kind, letters, left } or { error } (an error costs nothing).
+   */
+  function hintFor(p, kind) {
+    if (!match || !match.active) return { error: "Round is over" };
+    if (!p.r) return { error: "You join from the next round" };
+    if (p.r.done) return { error: "You have finished this round" };
+    if (p.r.hintCost >= HINTS_PER_ROUND) return { error: "No hints left this round" };
+    const tried = new Set(p.r.guesses.join(""));
+    const h = p.r.hints;
+    let letters;
+    if (kind === "yellow") {
+      const pool = Array.from(new Set(match.answer)).filter(
+        (ch) => !tried.has(ch) && !h.present.includes(ch),
+      );
+      if (!pool.length) return { error: "You have already found every letter" };
+      letters = [pool[Math.floor(Math.random() * pool.length)]];
+      h.present.push(letters[0]);
+    } else if (kind === "remove") {
+      const pool = "abcdefghijklmnopqrstuvwxyz"
+        .split("")
+        .filter((ch) => !match.answer.includes(ch) && !tried.has(ch) && !h.absent.includes(ch));
+      if (!pool.length) return { error: "No letters left to remove" };
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      letters = pool.slice(0, HINT_REMOVE_COUNT);
+      h.absent.push(...letters);
+    } else return { error: "Unknown hint" };
+    p.r.hintCost += 1;
+    p.score -= 1;
+    return { kind, letters, left: HINTS_PER_ROUND - p.r.hintCost };
   }
 
   /** Score one guess. Returns { result, finished, won } or { error }. */
@@ -652,8 +841,9 @@ window.LAN = (function () {
       p.r.done = true;
       p.r.won = won;
       const duration = Date.now() - match.startedAt;
-      p.r.points = Rules.roundPoints(won, p.r.guesses.length, duration, match.timer);
-      p.score += p.r.points;
+      const earned = Rules.roundPoints(won, p.r.guesses.length, duration, match.timer);
+      p.score += earned;
+      p.r.points = earned - p.r.hintCost; // hint points were already taken from the score
       if (won) {
         p.roundsWon += 1;
         p.solveTries = (p.solveTries || 0) + p.r.guesses.length;
@@ -661,6 +851,7 @@ window.LAN = (function () {
         notifyTeammates(p);
       }
       match.pending.delete(p.id);
+      if (chatLog.some((m) => m.hidden)) sendChatLog(p); // catch up on the finished players' chat
     }
     return { result, finished: p.r.done, won: p.r.won };
   }
@@ -670,13 +861,27 @@ window.LAN = (function () {
   const CHAT_MAX_LEN = 200;
   const CHAT_KEEP = 50;
 
-  /** Chat is closed while a round is being played, so nobody can leak hints. */
-  function chatOpen() {
-    return !!role && !(match && match.active);
+  /** During a round only players who have finished it (or are watching) may chat. */
+  function roundOver(p) {
+    return !(match && match.active) || !p.r || p.r.done;
+  }
+
+  /**
+   * The messages this player may read. What finished players say during a round stays
+   * hidden from those still guessing, so nobody can pass on the word.
+   */
+  function chatFor(p) {
+    return roundOver(p) ? chatLog : chatLog.filter((m) => !m.hidden);
+  }
+
+  /** Give a player the full chat (after they finish a round, or when the round ends). */
+  function sendChatLog(p) {
+    if (p.isHost) setTimeout(() => fire("onChatLog", chatFor(p)), 0);
+    else if (p.connected) send(p.conn, { type: "chatLog", items: chatFor(p) });
   }
 
   function hostChat(p, text) {
-    if (!chatOpen()) return false;
+    if (!role || !p || !roundOver(p)) return false;
     const clean = Rules.cleanText(text, CHAT_MAX_LEN);
     if (!clean) return false;
     // At most 5 messages every 6 seconds per player.
@@ -685,10 +890,14 @@ window.LAN = (function () {
     if (p.chatTimes.length >= 5) return false;
     p.chatTimes.push(now);
     const msg = { type: "chat", id: p.id, name: p.name, team: p.team, text: clean, ts: now };
+    if (match && match.active) msg.hidden = true; // until the round ends
     chatLog.push(msg);
     if (chatLog.length > CHAT_KEEP) chatLog.shift();
-    broadcast(msg);
-    fire("onChat", msg);
+    players.forEach((x) => {
+      if (!roundOver(x)) return;
+      if (x.isHost) fire("onChat", msg);
+      else if (x.connected) send(x.conn, msg);
+    });
     return true;
   }
 
@@ -753,9 +962,13 @@ window.LAN = (function () {
       if (p.r && !p.r.done) {
         p.r.done = true;
         p.r.won = false;
-        p.r.points = 0;
+        p.r.points = -p.r.hintCost;
       }
     });
+    if (chatLog.some((m) => m.hidden)) {
+      chatLog.forEach((m) => delete m.hidden);
+      players.forEach(sendChatLog);
+    }
     const last = match.roundIndex + 1 >= match.rounds;
     const payload = {
       type: "roundEnd",
@@ -808,10 +1021,213 @@ window.LAN = (function () {
     return guestDial();
   }
 
-  /** Reconnect with the same identity (score and board are kept by the host). */
+  /**
+   * Reconnect with the same identity (score and board are kept by the host).
+   * If the host is gone, the players take over in the order they joined: the first one
+   * becomes the host at once, the next one only if the first has not managed it, and so on.
+   * Resolves with { host: true } when this player has become the host.
+   */
   function rejoin() {
     if (!session) return Promise.reject(new Error("No room to rejoin"));
-    return guestDial();
+    const rank = successorRank();
+    const myTurn = rank >= 0 && rejoinFails >= (handover ? rank * 2 : rank * 2 + 1);
+    const dial = () =>
+      guestDial().catch((err) => {
+        rejoinFails += 1;
+        throw err;
+      });
+    if (!myTurn) return dial();
+    return becomeHost().then(
+      () => ({ host: true }),
+      () => dial(),
+    );
+  }
+
+  /** My place in the line of players who may take over (0 = first). -1 = not in line. */
+  function successorRank() {
+    if (!view || !Array.isArray(view.players)) return -1;
+    if (session && session.mode === "local" && !LocalNet.available()) return -1;
+    return view.players.filter((p) => !p.isServer && p.connected).findIndex((p) => p.id === myId);
+  }
+
+  /** Open the room again on this device, carrying on from the last scores we were sent. */
+  function becomeHost() {
+    const s = session;
+    const v = view;
+    const me = myId;
+    if (!s || !v || !me) return Promise.reject(new Error("Cannot take over"));
+    const local = s.mode === "local";
+    return (local ? Promise.resolve() : ensurePeerLib()).then(
+      () =>
+        new Promise((resolve, reject) => {
+          const p = local ? new LocalNet.HostPeer() : new Peer(fullPeerId(s.roomId), { debug: 0 });
+          let settled = false;
+          const fail = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            try {
+              p.destroy();
+            } catch (e) {
+              /* ignore */
+            }
+            reject(new Error("Could not take over the room"));
+          };
+          const timeout = setTimeout(fail, 10000);
+          p.on("open", () => {
+            if (settled) return;
+            if (session !== s || role !== "guest") return fail();
+            settled = true;
+            clearTimeout(timeout);
+            adoptRoom(p, s, v, me);
+            p.on("connection", onIncoming);
+            p.on("disconnected", () => {
+              if (peer === p && !p.destroyed) setTimeout(() => peer === p && p.reconnect(), 2000);
+            });
+            resolve();
+          });
+          p.on("error", (err) => (settled ? onHostPeerError(p, err) : fail()));
+        }),
+    );
+  }
+
+  function adoptRoom(p, s, v, me) {
+    stopHeartbeat();
+    flushWaiting();
+    const old = peer;
+    peer = p;
+    conn = null;
+    if (old && old !== p) {
+      try {
+        old.destroy();
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    role = "host";
+    mode = s.mode;
+    roomId = s.roomId;
+    roomPass = s.password;
+    session = null;
+    leaving = false;
+    hostQuiet = false;
+    handover = false;
+    rejoinFails = 0;
+    fails = [];
+    teams = sanitizeTeams(v.teams);
+    cfg = sanitizeCfg(v.cfg);
+    ownerId = v.ownerId || (v.players.find((x) => x.isServer) || {}).id || null;
+    ownerName = v.ownerName || "";
+    chatLog = chatLog.filter((m) => !m.hidden);
+    // A round that was being played cannot be finished (only the old host knew the word),
+    // so it is played again with a new word and its points are taken back.
+    const live = !!v.inMatch && v.players.some((x) => x.status === "playing");
+    const now = Date.now();
+    players = v.players
+      .filter((x) => v.inMatch || x.id === me || !x.isServer) // in the lobby the old host just leaves
+      .map((x) => {
+        const done = x.status === "won" || x.status === "lost";
+        const undo = live ? (done ? x.gained || 0 : -(x.hints || 0)) : 0;
+        const wonNow = live && x.status === "won";
+        return {
+          id: x.id,
+          name: x.name,
+          team: x.team >= 0 && x.team < teams.length ? x.team : 0,
+          isHost: x.id === me,
+          conn: null,
+          token: null,
+          connected: x.id === me,
+          lastSeen: now,
+          score: (x.score || 0) - undo,
+          roundsWon: (x.roundsWon || 0) - (wonNow ? 1 : 0),
+          solveTries: (x.solveTries || 0) - (wonNow ? x.tries || 0 : 0),
+          solveMs: x.solveMs || 0,
+          r: null,
+        };
+      });
+    match = null;
+    if (v.inMatch) {
+      match = {
+        rounds: v.total,
+        timer: cfg.timer,
+        roundIndex: (v.round || 1) - (live ? 2 : 1),
+        answer: null,
+        used: new Set(),
+        pending: new Set(),
+        active: false,
+        startedAt: 0,
+        endsAt: 0,
+        deadlineT: null,
+        endT: null,
+        nextT: null,
+      };
+      // Give the others a moment to find the new host before the next word.
+      match.nextT = setTimeout(nextRound, RESUME_MS);
+    }
+    // Seats of players who never come back are cleared from the lobby.
+    setTimeout(() => {
+      if (peer !== p || role !== "host" || match) return;
+      players = players.filter((x) => x.connected);
+      emitState();
+    }, 30000);
+    startHeartbeat();
+    emitState();
+  }
+
+  /** The host's link to the pairing server failed after the room was open. */
+  function onHostPeerError(p, err) {
+    if (peer !== p || role !== "host") return;
+    const t = String((err && (err.type || err.message)) || "");
+    // Our Room ID now belongs to someone else: the players carried on with a new host.
+    if (/unavailable-id|taken/i.test(t)) stepDown();
+  }
+
+  /** Same Wi-Fi: after a long pause, see whether another phone now hosts this room. */
+  function lookForNewHost() {
+    const id = roomId;
+    let found = false;
+    LocalNet.scan({
+      cancelled: () => found || role !== "host" || roomId !== id,
+      onRoom: (room) => {
+        if (room.roomId === id) found = true;
+      },
+    })
+      .then(() => found && role === "host" && roomId === id && stepDown())
+      .catch(() => {});
+  }
+
+  /** This device was the host, but the room moved on without it: join it as a player. */
+  function stepDown() {
+    const mine = hostPlayer();
+    if (role !== "host" || !mine) return;
+    stopHeartbeat();
+    clearMatchTimers();
+    session = {
+      mode,
+      roomId,
+      address: null,
+      password: roomPass,
+      name: mine.name,
+      token: randomString(20, "abcdefghijklmnopqrstuvwxyz0123456789"),
+    };
+    myId = mine.id;
+    const p = peer;
+    peer = null;
+    conn = { open: false, close() {} }; // "was connected": lets the normal rejoin flow run
+    try {
+      if (p) p.destroy();
+    } catch (e) {
+      /* ignore */
+    }
+    players = [];
+    match = null;
+    role = "guest";
+    leaving = false;
+    handover = false;
+    rejoinFails = 0;
+    if (view) view.players = view.players.map((x) => Object.assign({}, x, { isServer: false }));
+    conn = null;
+    fire("onConnection", "lost");
   }
 
   function guestDial() {
@@ -856,7 +1272,13 @@ window.LAN = (function () {
               { reliable: true },
             );
             c.on("open", () => {
-              send(c, { type: "join", name: s.name, password: s.password, token: s.token });
+              send(c, {
+                type: "join",
+                name: s.name,
+                password: s.password,
+                token: s.token,
+                pid: myId || undefined,
+              });
             });
             c.on("data", (raw) => {
               const msg = parse(raw);
@@ -878,12 +1300,19 @@ window.LAN = (function () {
                 if (c.address) s.address = c.address; // remembered for rejoining
                 myId = msg.you && msg.you.id;
                 lastSeen = Date.now();
+                hostQuiet = false;
+                handover = false;
+                rejoinFails = 0;
                 startHeartbeat();
                 resolve();
                 return;
               }
               if (conn !== c) return;
               lastSeen = Date.now();
+              if (hostQuiet) {
+                hostQuiet = false;
+                fire("onConnection", "hostBack");
+              }
               handleHostMsg(msg);
             });
             c.on("close", () => {
@@ -905,6 +1334,7 @@ window.LAN = (function () {
       case "round":
         fire("onRound", msg);
         break;
+      case "hintResult":
       case "guessResult": {
         const resolve = waiting.get(msg.seq);
         if (resolve) {
@@ -917,10 +1347,19 @@ window.LAN = (function () {
         fire("onTeammateSolved", msg);
         break;
       case "chat":
+        chatLog.push(msg); // kept in case this player has to take over as host
+        if (chatLog.length > CHAT_KEEP) chatLog.shift();
         fire("onChat", msg);
         break;
       case "chatLog":
-        fire("onChatLog", Array.isArray(msg.items) ? msg.items : []);
+        chatLog = Array.isArray(msg.items) ? msg.items.slice(-CHAT_KEEP) : [];
+        fire("onChatLog", chatLog);
+        break;
+      case "handover":
+        // The host left on purpose. The first player who joined becomes the host.
+        handover = true;
+        if (session && session.mode === "local") session.address = null;
+        handleLost();
         break;
       case "roundEnd":
         fire("onRoundEnd", msg);
@@ -973,6 +1412,24 @@ window.LAN = (function () {
     });
   }
 
+  function guestRequestHint(kind) {
+    if (!conn || !conn.open) return Promise.resolve({ error: "Not connected" });
+    const id = ++seq;
+    return new Promise((resolve) => {
+      const t = setTimeout(() => {
+        if (!waiting.has(id)) return;
+        waiting.delete(id);
+        send(conn, { type: "sync" }); // if the host did count it, the board will show it
+        resolve({ error: "No response from host" });
+      }, GUESS_TIMEOUT_MS);
+      waiting.set(id, (msg) => {
+        clearTimeout(t);
+        resolve(msg);
+      });
+      send(conn, { type: "hint", seq: id, kind });
+    });
+  }
+
   /* ===================== Role-agnostic API ===================== */
 
   function on(handlers) {
@@ -987,6 +1444,7 @@ window.LAN = (function () {
     const nm = Rules.cleanText(name, NAME_MAX);
     if (role === "host") {
       hostPlayer().name = nm || "Host";
+      if (myId === ownerId) ownerName = hostPlayer().name;
       emitState();
     } else if (role === "guest") {
       if (session) session.name = nm || "Player";
@@ -1005,22 +1463,31 @@ window.LAN = (function () {
     if (role === "host") hostAddTeam();
     else send(conn, { type: "addTeam" });
   }
+  /** True when this player holds the host controls (start, settings, remove players). */
+  function isAdmin() {
+    if (role === "host") return adminId() === myId;
+    const mine = view && view.players.find((p) => p.id === myId);
+    return !!(mine && mine.isHost);
+  }
+  function adminDo(cmd, arg, local) {
+    if (!isAdmin()) return;
+    if (role === "host") local();
+    else send(conn, { type: "admin", cmd, arg });
+  }
   function removeTeam(i) {
-    if (role === "host") hostRemoveTeam(i);
+    adminDo("removeTeam", i, () => hostRemoveTeam(i));
   }
   function kick(id) {
-    if (role === "host") hostKick(id);
+    adminDo("kick", id, () => hostKick(id));
   }
   function setConfig(c) {
-    if (role !== "host" || match) return;
-    cfg = sanitizeCfg(Object.assign({}, cfg, c));
-    emitState();
+    adminDo("config", c, () => hostSetConfig(c));
   }
   function startMatch() {
-    hostStartMatch();
+    adminDo("start", null, hostStartMatch);
   }
   function endRoundNow() {
-    if (role === "host") endRound();
+    adminDo("endRound", null, endRound);
   }
   function submitGuess(guess) {
     if (role === "host") {
@@ -1031,13 +1498,26 @@ window.LAN = (function () {
     return guestSubmitGuess(guess);
   }
 
+  function requestHint(kind) {
+    if (role === "host") {
+      const res = hintFor(hostPlayer(), kind);
+      if (res.letters) setTimeout(emitState, 0);
+      return Promise.resolve(res);
+    }
+    return guestRequestHint(kind);
+  }
+
   /** Leave / close the room and drop every connection. */
   function reset() {
     leaving = true;
+    hostQuiet = false;
     stopHeartbeat();
     clearMatchTimers();
     if (role === "guest" && conn) send(conn, { type: "leave" });
-    if (role === "host") broadcast({ type: "kicked", reason: "closed" });
+    // The room does not close when the host leaves: the next player takes it over.
+    if (role === "host") broadcast({ type: "handover" });
+    handover = false;
+    rejoinFails = 0;
     flushWaiting();
     const p = peer;
     peer = null;
@@ -1057,6 +1537,8 @@ window.LAN = (function () {
     match = null;
     fails = [];
     chatLog = [];
+    ownerId = null;
+    ownerName = "";
     roomId = null;
     roomPass = "";
     role = null;
@@ -1069,6 +1551,7 @@ window.LAN = (function () {
     on,
     reset,
     getRole: () => role,
+    isAdmin,
     getMyId: () => myId,
     getView: () => view,
     getRoom: () =>
@@ -1099,6 +1582,7 @@ window.LAN = (function () {
     startMatch,
     endRoundNow,
     submitGuess,
+    requestHint,
     sendChat,
     limits: { MAX_PLAYERS, MAX_TEAMS, NAME_MAX, TEAM_MAX },
   };

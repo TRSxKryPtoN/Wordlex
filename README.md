@@ -11,6 +11,9 @@ means it is not in the word.
 - **Play with friends:** team matches in a private room, with chat, team MVPs and
   a best-player award.
 
+
+![Wordlex screens: home, solo puzzle, lobby, match and final results](docs/screenshots/banner.png)
+
 The same game runs as a website on a PC and as an Android app.
 
 | | PC (website) | Android app |
@@ -18,6 +21,24 @@ The same game runs as a website on a PC and as an Android app.
 | Solo | Yes, works offline after the first visit | Yes, always offline |
 | Friends: Online | Yes, needs internet | Yes, needs internet |
 | Friends: Same Wi-Fi (offline) | Not available | Yes, no internet needed |
+
+---
+
+## Screenshots
+
+![Wordlex multiplayer: host a room, rooms nearby, chat, scores and round results](docs/screenshots/banner-2.png)
+
+| Solo puzzle | Result | Statistics | Light theme |
+|---|---|---|---|
+| ![Solo puzzle](docs/screenshots/02-solo.png) | ![Result](docs/screenshots/03-result.png) | ![Statistics](docs/screenshots/04-stats.png) | ![Light theme](docs/screenshots/05-light-theme.png) |
+
+| Lobby | Chat | Match | Scores |
+|---|---|---|---|
+| ![Lobby](docs/screenshots/07-lobby.png) | ![Chat](docs/screenshots/08-chat.png) | ![Match](docs/screenshots/09-match.png) | ![Scores](docs/screenshots/10-scores.png) |
+
+| Round results | Final results | Offline mode (app) | Rooms nearby (app) |
+|---|---|---|---|
+| ![Round results](docs/screenshots/11-round-results.png) | ![Final results](docs/screenshots/12-final-results.png) | ![Offline mode](docs/screenshots/13-offline-mode.png) | ![Rooms nearby](docs/screenshots/14-rooms-nearby.png) |
 
 ---
 
@@ -78,8 +99,11 @@ match should have the same version.
 
 Tips:
 
-- The host should keep the app open. If the host's phone is locked or the app is
-  closed, the match pauses for everyone.
+- The room keeps running if the host switches to another app (a small
+  notification shows while it is open). If the host leaves, the player who joined
+  first becomes the new host and the room stays open. If the original host
+  comes back under the same name, they get the host controls again. A round in progress
+  restarts with a new word; points from finished rounds are kept.
 - A player who leaves by mistake can join again with the **same name** and keeps
   their points.
 - Some office or hotel Wi-Fi networks block phones from talking to each other.
@@ -105,10 +129,13 @@ source and steps are in `mobile/ios/` and `MOBILE.md`.
   With a timer, solving in the first half of the time adds 2, and in the first
   three quarters adds 1.
 - A team's score is the average of its players, so a bigger team has no advantage.
+- A Hint costs 1 point: remove three letters that are not in the word, or reveal
+  one letter that is. Up to three hints a round.
 - When a teammate solves the word, the rest of the team is told who solved it,
   but not the word.
-- Chat is open in the lobby and on the final results. It is closed while a round
-  is being played.
+- Chat is open in the lobby and on the final results. During a round it opens for
+  a player once they have solved the word or used all six guesses; players still
+  guessing cannot see those messages until the round ends.
 - The final screen shows the winning team, an MVP for each team, and the best
   player overall.
 
@@ -131,6 +158,10 @@ All game code is in `public/wordle/`. After changing anything there:
 
 If the sync step is skipped, the app keeps the old copy of the game. To check,
 open Settings in the app and look at the version number.
+
+To offer the app on the website, also copy the APK to
+`public/downloads/Wordlex.apk`. The home screen of the website then shows a
+**Get the Android app** button (never inside the app itself).
 
 `MOBILE.md` has the full build details.
 

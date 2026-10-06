@@ -119,6 +119,18 @@
     );
   }
 
+  /**
+   * Places for an already sorted list, sharing a place on a tie: 1, 1, 3, 4.
+   * same(a, b) says whether two neighbours are level.
+   */
+  function ranks(sorted, same) {
+    const out = [];
+    sorted.forEach((item, i) => {
+      out.push(i > 0 && same(sorted[i - 1], item) ? out[i - 1] : i + 1);
+    });
+    return out;
+  }
+
   function pickMvp(list) {
     const ranked = (list || []).filter((p) => p.score > 0).sort(comparePlayers);
     return ranked.length ? ranked[0].id : null;
@@ -156,6 +168,7 @@
     roundPoints,
     teamScore,
     comparePlayers,
+    ranks,
     pickMvp,
     safeColor,
     cleanText,

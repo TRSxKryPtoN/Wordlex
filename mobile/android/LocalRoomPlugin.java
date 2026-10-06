@@ -12,6 +12,11 @@
 //   3. MainActivity.java:  registerPlugin(LocalRoomPlugin.class);  before super.onCreate(...)
 package com.example.wordlex;
 
+import android.content.Context;
+import android.content.Intent;
+import android.view.Window;
+import android.view.WindowManager;
+
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -103,7 +108,7 @@ public class LocalRoomPlugin extends Plugin {
             }
         };
         server.setReuseAddr(true);
-        server.setConnectionLostTimeout(20); // drop players whose phone vanished
+        server.setConnectionLostTimeout(60); // drop players whose phone vanished (patient: screens turn off)
         server.start();
     }
 
@@ -196,6 +201,34 @@ public class LocalRoomPlugin extends Plugin {
         }).start();
     }
 
+    /**
+     * keepAwake({ on }): while in a room, keep the screen on and keep the app running when it
+     * is in the background, so the connection is not dropped.
+     */
+    @PluginMethod
+    public void keepAwake(final PluginCall call) {
+        final boolean on = !Boolean.FALSE.equals(call.getBoolean("on", true));
+        roomService(on);
+        getActivity().runOnUiThread(() -> {
+            Window window = getActivity().getWindow();
+            if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            call.resolve();
+        });
+    }
+
+    /** Starts or stops RoomService, which keeps the room running while the app is in the background. */
+    private void roomService(boolean on) {
+        try {
+            Context context = getContext();
+            Intent intent = new Intent(context, RoomService.class);
+            if (on) context.startService(intent); // the app is on screen here, so a plain start is allowed
+            else context.stopService(intent);
+        } catch (Exception ignored) {
+            // not allowed right now; the game still works in the foreground
+        }
+    }
+
     @PluginMethod
     public void getLocalIp(PluginCall call) {
         JSObject ret = new JSObject();
@@ -206,6 +239,7 @@ public class LocalRoomPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         stopServer();
+        roomService(false);
     }
 
     private void stopServer() {
