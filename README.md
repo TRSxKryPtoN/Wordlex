@@ -12,9 +12,6 @@ means it is not in the word.
 - **Play with friends:** team matches in a private room, with chat, team MVPs and
   a best-player award.
 
-
-![Wordlex screens: home, solo puzzle, lobby, match and final results](docs/screenshots/banner.png)
-
 The same game runs as a website on a PC and as an Android app.
 
 | | PC (website) | Android app |
