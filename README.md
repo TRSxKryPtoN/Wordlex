@@ -1,8 +1,8 @@
+# Wordlex
+
 ## Screenshots
 <img width="2267" height="980" alt="banner (1)" src="https://github.com/user-attachments/assets/71a6114f-b87d-4d8e-ae97-3afa47c9a8ac" />
 <img width="2267" height="980" alt="banner-2 (1)" src="https://github.com/user-attachments/assets/d3128b5f-c9bc-49fd-977b-93e9a8e8a4ce" />
-
-# Wordlex
 
 A five-letter word puzzle. Guess the word in six tries: green means the letter
 is in the right spot, yellow means it is in the word but in the wrong spot, grey
@@ -111,7 +111,7 @@ source and steps are in `mobile/ios/` and `MOBILE.md`.
 - Points per round: 6 for solving on the first guess, down to 1 on the sixth.
   With a timer, solving in the first half of the time adds 2, and in the first
   three quarters adds 1.
-- A team's score is the average of its players, so a bigger team has no advantage.
+- A team's score is the total of its players' points.
 - A Hint costs 1 point: remove three letters that are not in the word, or reveal
   one letter that is. Up to three hints a round.
 - When a teammate solves the word, the rest of the team is told who solved it,

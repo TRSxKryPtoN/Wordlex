@@ -1,6 +1,6 @@
 /* Service worker: caches the whole game so the website works offline.
    Bump VERSION whenever any file below changes. */
-const VERSION = "wordlex-v2.13.2";
+const VERSION = "wordlex-v2.15.0";
 const FILES = [
   "./index.html",
   "./manifest.webmanifest",

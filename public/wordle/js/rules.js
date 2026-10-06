@@ -97,11 +97,9 @@
     return pts;
   }
 
-  /** Team score = average of its members, so team size gives no advantage. */
+  /** Team score = the total of its members' points. */
   function teamScore(memberScores) {
-    if (!memberScores.length) return 0;
-    const sum = memberScores.reduce((s, n) => s + n, 0);
-    return Math.round((sum / memberScores.length) * 10) / 10;
+    return memberScores.reduce((s, n) => s + n, 0);
   }
 
   /**

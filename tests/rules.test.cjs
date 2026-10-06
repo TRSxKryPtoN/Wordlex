@@ -56,10 +56,11 @@ test("round points", () => {
   assert.equal(Rules.roundPoints(true, 3, 59000, 60), 4);
 });
 
-test("team score is the average, so bigger teams get no advantage", () => {
-  assert.equal(Rules.teamScore([6, 6]), 6);
+test("team score is the total of its players' points", () => {
+  assert.equal(Rules.teamScore([6, 6]), 12);
   assert.equal(Rules.teamScore([6]), 6);
-  assert.equal(Rules.teamScore([5, 4, 0]), 3);
+  assert.equal(Rules.teamScore([5, 4, 0]), 9);
+  assert.equal(Rules.teamScore([0, -3]), -3);
   assert.equal(Rules.teamScore([]), 0);
 });
 

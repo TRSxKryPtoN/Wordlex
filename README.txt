@@ -112,8 +112,7 @@ IPHONE
   1 on the sixth guess.
 - With a timer: +2 if solved in the first half of the time,
   +1 if solved in the first three quarters.
-- A team's score is the AVERAGE of its players, so a bigger
-  team has no advantage.
+- A team's score is the TOTAL of its players' points.
 - A Hint costs 1 point: remove three letters that are not in the word, or reveal
   one letter that is. Up to three hints a round.
 - When a teammate solves the word, the rest of the team is told

@@ -895,11 +895,46 @@ window.LanUI = (function () {
     const leaders = nobodyScored ? [] : players.filter((x) => x.score === players[0].score);
     const teamPlaces = Rules.ranks(teamsList, sameScore);
 
+    // The podium is for teams: the match is a team contest. Players are listed below it.
+    const activePlaces = Rules.ranks(active, sameScore);
+    const playerRow = (x, i) => {
+      const t = teamOf(x, p) || {};
+      const isMvp = mvpOf(x.team) && mvpOf(x.team).id === x.id;
+      return `<div class="lb-row rank-${nobodyScored ? 0 : places[i]}${x.id === LAN.getMyId() ? " me" : ""}">
+        <span class="lb-rank">${nobodyScored ? "–" : places[i]}</span>
+        <span class="lb-name"><span class="swatch" style="background:${color(t.color)}"></span>${esc(x.name)}
+          <span class="muted">· ${esc(t.name || "")}</span>
+          ${isMvp ? '<span class="tag ok">MVP</span>' : ""}</span>
+        <span class="pts">${x.score}</span></div>`;
+    };
+    const teamRow = (t, i) => `<div class="lb-row">
+        <span class="lb-rank">${nobodyScored ? "–" : teamPlaces[i]}</span>
+        <span class="lb-name"><span class="swatch" style="background:${color(t.color)}"></span><b>${esc(t.name)}</b>
+          <span class="muted">· ${t.members}</span></span>
+        <span class="pts">${t.score}</span></div>`;
+    // Teams that did not fit on the podium (4th and lower, or empty teams).
+    const offPodium = teamsList
+      .map((t, i) => [t, i])
+      .filter(([t]) => nobodyScored || active.indexOf(t) < 0 || active.indexOf(t) > 2);
+
     stats.innerHTML =
-      // With no points on the board there is no podium, only the list of players.
+      // With no points on the board there is no podium, only the lists.
       (nobodyScored
-        ? restListHTML(players, places, 0)
-        : podiumHTML(players, p, places) + restListHTML(players.slice(3), places, 3)) +
+        ? ""
+        : podiumHTML(
+            active.slice(0, 3).map((t) => ({
+              name: t.name,
+              score: t.score,
+              color: t.color,
+              badge: mvpOf(t.id)
+                ? `MVP ${mvpOf(t.id).name}`
+                : `${t.members} player${t.members === 1 ? "" : "s"}`,
+            })),
+            activePlaces,
+          )) +
+      (offPodium.length
+        ? `<div class="rest-list">${offPodium.map(([t, i]) => teamRow(t, i)).join("")}</div>`
+        : "") +
       (leaders.length
         ? `<div class="award"><span class="award-label">${leaders.length > 1 ? "Best players · tied" : "Best player"}</span>
             ${leaders
@@ -910,16 +945,7 @@ window.LanUI = (function () {
               .join("")}
             <span class="award-pts">${leaders[0].score} pts${leaders.length > 1 ? " each" : ` · ${leaders[0].roundsWon} solved`}</span></div>`
         : "") +
-      `<h3>Teams</h3><div class="team-summary">${teamsList
-        .map(
-          (t, i) => `<div class="lb-row rank-${nobodyScored ? 0 : teamPlaces[i]}">
-            <span class="lb-rank">${nobodyScored ? "–" : teamPlaces[i]}</span>
-            <span class="lb-name"><span class="swatch" style="background:${color(t.color)}"></span><b>${esc(t.name)}</b>
-              <span class="muted">· ${t.members}</span>
-              ${mvpOf(t.id) ? `<span class="tag ok">MVP ${esc(mvpOf(t.id).name)}</span>` : ""}</span>
-            <span class="pts">${t.score}</span></div>`,
-        )
-        .join("")}</div>`;
+      `<h3>Players</h3><div class="team-summary">${players.map(playerRow).join("")}</div>`;
 
     showResultControls();
 
@@ -948,54 +974,33 @@ window.LanUI = (function () {
     return t || null;
   }
 
-  function podiumHTML(players, payload, places) {
-    const top = players.slice(0, 3);
-    if (!top.length) return "";
+  /** items: up to three { name, score, color, badge }, best first. places: their shared ranks. */
+  function podiumHTML(items, places) {
+    if (!items.length) return "";
     const order = [1, 0, 2]; // visual order: 2nd, 1st, 3rd
     const medal = { 1: "gold", 2: "silver", 3: "bronze" };
     const cells = order
       .map((idx) => {
-        const p = top[idx];
-        if (!p) return ""; // fewer than three players: the others stay centred
-        const place = places[idx]; // players level on points share a place (and a medal)
-        const team = teamOf(p, payload);
-        const c = color(team && team.color);
-        const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
+        const it = items[idx];
+        if (!it) return ""; // fewer than three: the others stay centred
+        const place = places[idx]; // level on points: same place and same medal
+        const c = color(it.color);
+        const initial = esc((it.name || "?").trim().charAt(0).toUpperCase() || "?");
         return `<div class="podium-spot ${medal[place]}">
           <div class="podium-head">
             <div class="podium-avatar" style="background:${c}">${initial}</div>
-            <div class="podium-name">${esc(p.name)}</div>
-            <div class="podium-score">${p.score} pts</div>
+            <div class="podium-name">${esc(it.name)}</div>
+            <div class="podium-score">${it.score} pts</div>
           </div>
           <div class="podium-pedestal">
             <div class="podium-medal" aria-label="Place ${place}">${place}</div>
-            <div class="podium-badge" style="background:${c}">${team ? esc(team.name) : "—"}</div>
+            <div class="podium-badge" style="background:${c}">${esc(it.badge)}</div>
           </div>
         </div>`;
       })
       .join("");
     return `<div class="podium-wrap"><div class="podium">${cells}</div></div>`;
   }
-
-  function restListHTML(rest, places, offset) {
-    if (!rest.length) return "";
-    const myId = LAN.getMyId();
-    const noRank = offset === 0; // the nobody-scored list
-    return (
-      '<div class="rest-list">' +
-      rest
-        .map((p, i) => {
-          const team = state && state.teams[p.team];
-          return `<div class="lb-row${p.id === myId ? " me" : ""}">
-            <span class="lb-rank">${noRank ? "–" : places[i + offset]}</span>
-            <span class="lb-name"><span class="swatch" style="background:${color(team && team.color)}"></span>${esc(p.name)}</span>
-            <span class="pts">${p.score}</span></div>`;
-        })
-        .join("") +
-      "</div>"
-    );
-  }
-
   /* ---------- Chat ---------- */
 
   const CHAT_DOM_MAX = 100;
