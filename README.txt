@@ -2,6 +2,8 @@
                           WORDLEX
 ==============================================================
 
+CLICK TO PLAY : https://wordlex-public.vercel.app/wordle/
+
 A five-letter word puzzle. Guess the word in six tries.
 
   GREEN   = the letter is in the right spot
